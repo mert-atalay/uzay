@@ -1,0 +1,6 @@
+{
+  "name": "Astralis — Solar & Interstellar Free-Roam",
+  "description": "A realistic 3D space exploration game featuring our full Solar System, landable planets and moons, fluid multi-scale flight, adaptive atmospheric soundscapes, and real interstellar travel to Alpha Centauri and nearby star systems.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
