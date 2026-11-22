@@ -11,6 +11,18 @@ var _markers_visible := true
 @onready var info: Label = $Info
 @onready var help: Label = $Help
 @onready var marker_layer: Control = $Markers
+@onready var travel_menu: TravelMenu = $TravelMenu
+@onready var music: AudioStreamPlayer = $Music
+
+
+func _ready() -> void:
+	travel_menu.space_view = space_view
+	var stream := load("res://assets/music/interstellar_main_theme.mp3") as AudioStreamMP3
+	if stream != null:
+		stream.loop = true
+		music.stream = stream
+		music.volume_db = -9.0
+		music.play()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -19,6 +31,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		marker_layer.visible = _markers_visible
 	elif event.is_action_pressed("time_scale"):
 		Universe.cycle_time_scale()
+	elif event.is_action_pressed("travel_menu"):
+		if travel_menu.visible:
+			travel_menu.close()
+		else:
+			travel_menu.open()
+	elif event.is_action_pressed("mute"):
+		music.stream_paused = not music.stream_paused
 
 
 func _process(_delta: float) -> void:
@@ -45,6 +64,8 @@ func _update_markers() -> void:
 			continue # only show moons of the world you're at, to keep the sky clean
 		var world_pos: Vector3 = space_view.render_position_of(id)
 		var dist := Universe.catalog.body_position(id, Universe.sim_time).sub(space_view.player.pos).length()
+		if b["radius_m"] / maxf(dist, 1.0) > 0.03:
+			continue # it fills a good part of the view already: no label across its face
 		_show_marker(cam, id, world_pos, "%s  %s" % [b["name"], Fmt.distance(dist)], seen)
 	for fs in space_view.far_system_vectors():
 		var world_pos: Vector3 = fs["dir"] * space_view.space.far * 0.5
@@ -55,7 +76,7 @@ func _update_markers() -> void:
 
 
 func _show_marker(cam: Camera3D, id: String, world_pos: Vector3, text: String, seen: Dictionary) -> void:
-	if cam.is_position_behind(world_pos):
+	if cam.is_position_behind(world_pos) or space_view.is_occluded(world_pos, id):
 		return
 	var screen := cam.unproject_position(world_pos)
 	if not get_viewport().get_visible_rect().has_point(screen):

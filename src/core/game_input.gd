@@ -20,6 +20,9 @@ func _enter_tree() -> void:
 	_key("time_scale", [KEY_T])
 	_key("toggle_markers", [KEY_H])
 	_key("release_mouse", [KEY_ESCAPE])
+	_key("travel_menu", [KEY_TAB])
+	_key("mute", [KEY_M])
+	_button("travel_menu", JOY_BUTTON_START)
 
 	_axis("move_forward", JOY_AXIS_LEFT_Y, -1.0)
 	_axis("move_back", JOY_AXIS_LEFT_Y, 1.0)

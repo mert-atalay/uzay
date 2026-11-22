@@ -3,30 +3,36 @@ extends Node3D
 ## Builds the current star system at true scale and keeps it placed around the player.
 ##
 ## Every frame: compute each body's 64-bit position, subtract the player's position
-## (floating origin), then compress far distances with ScaledSpace so the 32-bit renderer
-## can show Earth from 2 m away and the Sun from 1 AU in the same frame.
+## (floating origin), then fit distances into the camera with ScaledSpace so the 32-bit
+## renderer can show Earth from 2 m away and the Sun from 1 AU in the same frame.
 
-const SPHERE_SEGMENTS := 128
+signal system_changed(system_id: String)
 
-## Where the player starts: Earth's day side, this far above the surface.
+## Where the player starts.
 @export var start_body := "earth"
 @export var start_altitude_m := 1.2e7
 
-var bodies: Dictionary = {} # id -> MeshInstance3D
-var far_systems: Array = [] # [{id, primary}]
-var space := ScaledSpace.for_altitude(1.0e7)
 ## Within this many radii of a body you travel along with it (otherwise Earth would leave you
 ## behind at 30 km/s). The prototype called this the co-moving reference frame.
 const FRAME_RADII := 200.0
+const SKY_SHADER := preload("res://shaders/sky.gdshader")
+const SKY_BRIGHTNESS := 0.85
+
+var bodies: Dictionary = {} # id -> MeshInstance3D
+var far_systems: Array = [] # [{id}]
+var space := ScaledSpace.for_altitude(1.0e7)
+var _lit_materials: Array = []
 var _frame_body := ""
 var _frame_prev := DVec3.new()
+## Orientation of the Milky Way panorama relative to the ecliptic-aligned world.
+var _sky_basis := Basis(Vector3.RIGHT, deg_to_rad(60.2)) * Basis(Vector3.UP, deg_to_rad(96.0))
 
 @onready var player: Player = $Player
-@onready var sun_light: DirectionalLight3D = $SunLight
-@onready var starfield: Starfield = $Starfield
+@onready var sky: MeshInstance3D = $Sky
 
 
 func _ready() -> void:
+	_setup_sky()
 	_build_system(player.system_id)
 	_place_player_near(start_body, start_altitude_m)
 	for arg in OS.get_cmdline_user_args():
@@ -35,60 +41,75 @@ func _ready() -> void:
 			add_child(cap)
 
 
+func _setup_sky() -> void:
+	sky.mesh = BodyVisuals.sphere()
+	var m := ShaderMaterial.new()
+	m.shader = SKY_SHADER
+	m.set_shader_parameter("panorama", BodyVisuals.texture("milky_way.jpg"))
+	m.set_shader_parameter("brightness", SKY_BRIGHTNESS)
+	sky.material_override = m
+	sky.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Shaders that never write depth are drawn in the transparent pass: make sure the sky goes first.
+	m.render_priority = -100
+
+
 func _build_system(system_id: String) -> void:
+	for id in bodies:
+		bodies[id].queue_free()
+	bodies.clear()
+	far_systems.clear()
+	_lit_materials.clear()
+	_frame_body = ""
+	player.system_id = system_id
 	for b in Universe.catalog.bodies_in_system(system_id):
-		var mi := MeshInstance3D.new()
-		mi.name = b["id"]
-		var sphere := SphereMesh.new()
-		sphere.radius = 1.0
-		sphere.height = 2.0
-		sphere.radial_segments = SPHERE_SEGMENTS
-		sphere.rings = SPHERE_SEGMENTS / 2
-		mi.mesh = sphere
-		mi.material_override = _material_for(b)
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var mi := BodyVisuals.build(b, _lit_materials)
 		add_child(mi)
 		bodies[b["id"]] = mi
+		if mi.has_meta("black_hole_material"):
+			var m: ShaderMaterial = mi.get_meta("black_hole_material")
+			m.set_shader_parameter("sky_from_world", _sky_basis.inverse())
+			m.set_shader_parameter("sky_brightness", SKY_BRIGHTNESS)
 	for s in Universe.catalog.systems:
 		if s["id"] != system_id:
-			far_systems.append({"id": s["id"], "primary": Universe.catalog.primary_of(s["id"])})
+			far_systems.append({"id": s["id"]})
+	system_changed.emit(system_id)
 
 
-func _material_for(b: Dictionary) -> Material:
-	var palette: Array = b["palette"]
-	match b["kind"]:
-		"star":
-			var m := StandardMaterial3D.new()
-			m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-			m.albedo_color = UniverseCatalog.color_of(b["star_color"], Color(1, 0.95, 0.85))
-			m.emission_enabled = true
-			m.emission = m.albedo_color
-			m.emission_energy_multiplier = 40.0 # far above the glow threshold, so stars bloom
-			return m
-		"black-hole":
-			# Placeholder: pure shadow. Milestone 3 replaces it with ray-traced lensing.
-			var m := StandardMaterial3D.new()
-			m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-			m.albedo_color = Color.BLACK
-			return m
-		_:
-			var m := StandardMaterial3D.new()
-			# Flat placeholder colours until each world gets real surface shaders (milestone 4+).
-			m.albedo_color = Color(0.13, 0.3, 0.58) if b["id"] == "earth" else UniverseCatalog.color_of(palette[0], Color.GRAY)
-			m.roughness = 0.95
-			m.metallic_specular = 0.2
-			return m
+## Jump next to a body (switching star system if needed).
+func travel_to_body(body_id: String) -> void:
+	var b := Universe.catalog.body(body_id)
+	if b.is_empty():
+		return
+	if b["system"] != player.system_id:
+		_build_system(b["system"])
+	var altitude: float = b["radius_m"] * 3.0
+	if b["kind"] == "star":
+		altitude = b["radius_m"] * 5.0
+	elif b["kind"] == "black-hole":
+		altitude = b["radius_m"] * 24.0
+	_place_player_near(body_id, altitude)
+
+
+func travel_to_system(system_id: String) -> void:
+	var primary := Universe.catalog.primary_of(system_id)
+	if not primary.is_empty():
+		travel_to_body(primary["id"])
 
 
 func _place_player_near(body_id: String, altitude: float) -> void:
 	var b := Universe.catalog.body(body_id)
 	var center := Universe.catalog.body_position(body_id, Universe.sim_time)
-	var star := Universe.catalog.body_position(Universe.catalog.primary_of(player.system_id)["id"], Universe.sim_time)
-	# Sit between the planet and its star (day side), a little off-axis so the terminator shows.
-	var to_star := star.sub(center).normalized().to_vector3()
-	var side := to_star.cross(Vector3.UP).normalized()
-	var dir := (to_star * 0.75 + side * 0.66).normalized()
+	var dir: Vector3
+	if b["parent"] == null:
+		# A star or the black hole: approach from slightly above its equator.
+		dir = Vector3(0.62, 0.17, 0.77).normalized()
+	else:
+		# Sit on the day side, a little off-axis so the terminator shows.
+		var to_star := center.scaled(-1.0).normalized().to_vector3()
+		var side := to_star.cross(Vector3.UP).normalized()
+		dir = (to_star * 0.75 + side * 0.6 + Vector3.UP * 0.32).normalized()
 	player.pos = center.add(DVec3.from_vector3(dir).scaled(b["radius_m"] + altitude))
+	player.velocity = Vector3.ZERO
 	player.look_at(-dir, Vector3.UP)
 	_frame_body = body_id
 	_frame_prev = center
@@ -105,7 +126,7 @@ func _process(_delta: float) -> void:
 		centers[id] = Universe.catalog.body_position(id, t)
 
 	# Travel along with the body we were near, before measuring anything.
-	if _frame_body != "":
+	if _frame_body != "" and centers.has(_frame_body):
 		player.pos = player.pos.add(centers[_frame_body].sub(_frame_prev))
 
 	# Pass 2: surface collision, and which body is closest.
@@ -133,13 +154,13 @@ func _process(_delta: float) -> void:
 		var b: Dictionary = Universe.catalog.bodies_by_id[id]
 		var rel: DVec3 = centers[id].sub(player.pos)
 		var d := rel.length()
-		# The body you're closest to is never compressed, so its surface stays exact.
-		var s := 1.0 if id == nearest_id else space.scale_factor(d)
+		var extent: float = b["radius_m"] * (BodyVisuals.LENS_RADIUS if b["kind"] == "black-hole" else 3.0)
+		# The body you're at is drawn uncompressed (exact surface) whenever it fits the far plane.
+		var s := 1.0 if (id == nearest_id and d + extent < space.far * 0.9) else space.scale_factor(d)
 		_place(bodies[id], b, rel.scaled(s).to_vector3(), b["radius_m"] * s, t)
 
-	_update_sun()
-	var sky_radius := space.far * 0.9
-	starfield.global_transform = Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * sky_radius), Vector3.ZERO)
+	_update_lighting(centers)
+	sky.global_transform = Transform3D(_sky_basis.scaled(Vector3.ONE * space.far * 0.95), Vector3.ZERO)
 
 
 func _choose_frame_body(nearest_id: String, nearest_alt: float, centers: Dictionary) -> void:
@@ -150,24 +171,71 @@ func _choose_frame_body(nearest_id: String, nearest_alt: float, centers: Diction
 
 
 func _place(mi: MeshInstance3D, b: Dictionary, render_pos: Vector3, render_radius: float, t: float) -> void:
-	var period_h: float = b["rotation_period_h"]
-	var angle := TAU * t / (period_h * 3600.0) if period_h != 0.0 else 0.0
-	var tilt := Basis(Vector3.FORWARD, deg_to_rad(b["axial_tilt_deg"]))
-	mi.global_transform = Transform3D((tilt * Basis(Vector3.UP, angle)).scaled(Vector3.ONE * render_radius), render_pos)
+	var basis := Basis.IDENTITY
+	if b["kind"] != "black-hole":
+		var period_h: float = b["rotation_period_h"]
+		var angle := TAU * t / (period_h * 3600.0) if period_h != 0.0 else 0.0
+		basis = Basis(Vector3.FORWARD, deg_to_rad(b["axial_tilt_deg"])) * Basis(Vector3.UP, angle)
+	mi.global_transform = Transform3D(basis.scaled(Vector3.ONE * render_radius), render_pos)
 
 
-func _update_sun() -> void:
-	# The system's primary lights everything; point the directional light from it to us.
+func _update_lighting(centers: Dictionary) -> void:
+	# Everything is lit by the system's primary (for Sgr A*: the glow of its accretion disk).
 	var primary := Universe.catalog.primary_of(player.system_id)
-	if primary.is_empty() or primary["kind"] == "black-hole":
-		sun_light.visible = primary.is_empty()
+	if primary.is_empty():
 		return
-	var star_pos := Universe.catalog.body_position(primary["id"], Universe.sim_time)
-	var dir := player.pos.sub(star_pos).normalized().to_vector3()
-	if dir.is_zero_approx():
-		return
-	sun_light.light_color = UniverseCatalog.color_of(primary["star_color"], Color.WHITE)
-	sun_light.global_transform = Transform3D(Basis.looking_at(dir, Vector3.UP if absf(dir.y) < 0.99 else Vector3.RIGHT), Vector3.ZERO)
+	var au: float = Universe.catalog.constants["AU"]
+	var is_hole: bool = primary["kind"] == "black-hole"
+	var color := Color(1.0, 0.62, 0.36) if is_hole else UniverseCatalog.color_of(primary["star_color"], Color.WHITE)
+	# Stars keep most of their colour out of the light: sunlight looks white to an adapted eye.
+	color = color.lerp(Color.WHITE, 0.0 if is_hole else 0.6)
+	for id in bodies:
+		var mi: MeshInstance3D = bodies[id]
+		var mats := _materials_of(mi)
+		if mats.is_empty():
+			continue
+		var c: DVec3 = centers[id]
+		var d := c.length()
+		var to_star := c.scaled(-1.0).normalized().to_vector3()
+		# Gentle falloff (not inverse-square) until auto-exposure lands: far worlds are dimmer but readable.
+		var energy := clampf(1.5 * pow(au / maxf(d, 1.0), 0.3), 0.35, 2.4)
+		if is_hole:
+			energy = 0.9
+		for m in mats:
+			m.set_shader_parameter("sun_dir_world", to_star)
+			m.set_shader_parameter("sun_color", color)
+			if m.shader == BodyVisuals.ATMO_SHADER:
+				m.set_shader_parameter("sun_energy", energy * 8.0)
+			else:
+				m.set_shader_parameter("sun_energy", energy)
+			if m.shader == BodyVisuals.PLANET_SHADER:
+				m.set_shader_parameter("cloud_shift", Universe.sim_time * 2.0e-6)
+
+
+func _materials_of(mi: MeshInstance3D) -> Array:
+	var out := []
+	if mi.material_override is ShaderMaterial and _lit_materials.has(mi.material_override):
+		out.append(mi.material_override)
+	for child in mi.get_children():
+		if child is MeshInstance3D and child.material_override is ShaderMaterial:
+			out.append(child.material_override)
+	return out
+
+
+## True if the body you're next to blocks the line of sight to `render_pos` (so its marker hides).
+func is_occluded(render_pos: Vector3, target_id: String) -> bool:
+	var near_id := player.nearest_body_id
+	if near_id == "" or near_id == target_id or not bodies.has(near_id):
+		return false
+	var mi: MeshInstance3D = bodies[near_id]
+	var c := mi.global_position
+	var r := mi.global_transform.basis.get_scale().x
+	var dist := render_pos.length()
+	var dir := render_pos / maxf(dist, 1e-6)
+	var b := c.dot(dir)
+	if b < 0.0 or b > dist:
+		return false
+	return c.length_squared() - b * b < r * r
 
 
 ## Render-space position of a body (for HUD markers). Returns null if unknown.

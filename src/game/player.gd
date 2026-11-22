@@ -38,7 +38,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_look(-event.relative.x * MOUSE_SENSITIVITY, -event.relative.y * MOUSE_SENSITIVITY)
 	elif event is InputEventMouseButton and event.pressed:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
-			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+			if event.button_index == MOUSE_BUTTON_LEFT:
+				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		elif event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			throttle = mini(throttle + 1, 6)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
