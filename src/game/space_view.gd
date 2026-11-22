@@ -17,6 +17,8 @@ signal system_changed(system_id: String)
 const FRAME_RADII := 200.0
 const SKY_SHADER := preload("res://shaders/sky.gdshader")
 const SKY_BRIGHTNESS := 0.85
+const WARP_SECONDS := 6.0
+const WARP_CROSS_SECONDS := 10.0
 
 var bodies: Dictionary = {} # id -> MeshInstance3D
 var far_systems: Array = [] # [{id}]
@@ -41,6 +43,10 @@ var star_energy := 2.0
 ## What is under the player this frame, when close to a body with solid ground (else empty):
 ## body, center, fixed_up (planet-fixed, 64-bit), tilt, angle, sea_altitude, height.
 var ground: Dictionary = {}
+## Warp travel in progress (empty when not warping), and what the HUD should draw for it.
+var _warp: Dictionary = {}
+var warp_amount := 0.0
+var warp_flash := 0.0
 ## 0..1: how hard the air is burning around you during a fast descent (the HUD draws it).
 var entry_heat := 0.0
 var _body_light: Dictionary = {} # id -> [direction to the star, energy]
@@ -104,12 +110,93 @@ func travel_to_body(body_id: String) -> void:
 		return
 	if b["system"] != player.system_id:
 		_build_system(b["system"])
-	var altitude: float = b["radius_m"] * 3.0
+	_warp = {}
+	_place_player_near(body_id, _arrival_altitude(b))
+
+
+## How far out a jump or warp to this body ends.
+func _arrival_altitude(b: Dictionary) -> float:
 	if b["kind"] == "star":
-		altitude = b["radius_m"] * 5.0
-	elif b["kind"] == "black-hole":
-		altitude = b["radius_m"] * 9.0
-	_place_player_near(body_id, altitude)
+		return b["radius_m"] * 5.0
+	if b["kind"] == "black-hole":
+		return b["radius_m"] * 9.0
+	return b["radius_m"] * 3.0
+
+
+## Which side of a body you arrive on (unit vector from its centre).
+func _arrival_dir(b: Dictionary, center: DVec3) -> Vector3:
+	if b["parent"] == null:
+		# A star or the black hole: approach from slightly above its equator.
+		return Vector3(0.62, 0.17, 0.77).normalized()
+	# The day side, a little off-axis so the terminator shows.
+	var to_star := center.scaled(-1.0).normalized().to_vector3()
+	var side := to_star.cross(Vector3.UP).normalized()
+	return (to_star * 0.75 + side * 0.6 + Vector3.UP * 0.32).normalized()
+
+
+## Fly to a body at warp instead of jumping: a few seconds of streaking stars, with a flash
+## when the trip crosses to another star system.
+func warp_to(body_id: String) -> void:
+	var b := Universe.catalog.body(body_id)
+	if b.is_empty() or not _warp.is_empty() or plunge.phase != Plunge.Phase.NONE:
+		return
+	var cross: bool = b["system"] != player.system_id
+	_warp = {"target": body_id, "t": 0.0, "duration": WARP_CROSS_SECONDS if cross else WARP_SECONDS,
+		"cross": cross, "start": player.pos.duplicate(), "swapped": not cross}
+	player.controls_locked = true
+	player.mode = Player.Mode.FLY
+	_frame_body = ""
+
+
+func is_warping() -> bool:
+	return not _warp.is_empty()
+
+
+func _advance_warp(delta: float) -> void:
+	_warp["t"] += delta
+	var u: float = clampf(_warp["t"] / _warp["duration"], 0.0, 1.0)
+	var b := Universe.catalog.body(_warp["target"])
+	# Between systems: the first half is spent leaving, then the new system is built around us
+	# far from the target, and the second half is the approach.
+	var approach := u
+	if _warp["cross"]:
+		approach = clampf((u - 0.5) * 2.0, 0.0, 1.0)
+		warp_flash = 1.0 - smoothstep(0.0, 0.12, absf(u - 0.5))
+		if u >= 0.5 and not _warp["swapped"]:
+			_warp["swapped"] = true
+			_build_system(b["system"])
+			var c := Universe.catalog.body_position(b["id"], Universe.sim_time)
+			var far: float = (b["radius_m"] + _arrival_altitude(b)) * 300.0
+			_warp["start"] = c.add(DVec3.from_vector3(_arrival_dir(b, c)).scaled(far))
+			player.pos = _warp["start"].duplicate()
+	# Streaks build up, hold, and die away as you arrive.
+	warp_amount = smoothstep(0.0, 0.15, u) * (1.0 - smoothstep(0.6, 0.88, approach))
+	player.camera.fov = lerpf(70.0, 104.0, warp_amount)
+	player.thrust_local = Vector3(0.0, 0.0, -1.0)
+	if _warp["swapped"]:
+		var center := Universe.catalog.body_position(b["id"], Universe.sim_time)
+		var dest := center.add(DVec3.from_vector3(_arrival_dir(b, center)).scaled(b["radius_m"] + _arrival_altitude(b)))
+		var start: DVec3 = _warp["start"]
+		# Slow away, then cover most of the distance, then ease in: what is left shrinks fast.
+		var f := approach * approach * approach * (approach * (approach * 6.0 - 15.0) + 10.0)
+		var left := pow(1.0 - f, 4.0)
+		player.pos = dest.add(start.sub(dest).scaled(left))
+		# Turn to face where we are going.
+		var to_target := center.sub(player.pos).normalized().to_vector3()
+		var up := player.transform.basis.y
+		if absf(to_target.dot(up)) > 0.98:
+			up = player.transform.basis.x
+		var facing := Basis.looking_at(to_target, up)
+		player.transform.basis = player.transform.basis.slerp(facing, 1.0 - exp(-4.0 * delta)).orthonormalized()
+	if u >= 1.0:
+		_warp = {}
+		warp_amount = 0.0
+		warp_flash = 0.0
+		player.controls_locked = false
+		player.velocity = Vector3.ZERO
+		player.camera.fov = 70.0
+		_frame_body = b["id"]
+		_frame_prev = Universe.catalog.body_position(b["id"], Universe.sim_time)
 
 
 func travel_to_system(system_id: String) -> void:
@@ -121,15 +208,7 @@ func travel_to_system(system_id: String) -> void:
 func _place_player_near(body_id: String, altitude: float) -> void:
 	var b := Universe.catalog.body(body_id)
 	var center := Universe.catalog.body_position(body_id, Universe.sim_time)
-	var dir: Vector3
-	if b["parent"] == null:
-		# A star or the black hole: approach from slightly above its equator.
-		dir = Vector3(0.62, 0.17, 0.77).normalized()
-	else:
-		# Sit on the day side, a little off-axis so the terminator shows.
-		var to_star := center.scaled(-1.0).normalized().to_vector3()
-		var side := to_star.cross(Vector3.UP).normalized()
-		dir = (to_star * 0.75 + side * 0.6 + Vector3.UP * 0.32).normalized()
+	var dir := _arrival_dir(b, center)
 	player.pos = center.add(DVec3.from_vector3(dir).scaled(b["radius_m"] + altitude))
 	player.velocity = Vector3.ZERO
 	player.look_at(-dir, Vector3.UP)
@@ -141,6 +220,8 @@ func _process(delta: float) -> void:
 	if plunge.phase == Plunge.Phase.TESSERACT or plunge.phase == Plunge.Phase.LEAVING:
 		_process_tesseract()
 		return
+	if not _warp.is_empty():
+		_advance_warp(delta)
 	var t := Universe.sim_time
 	var centers := {}
 	var nearest_alt := INF

@@ -16,6 +16,9 @@ var _markers_visible := true
 @onready var notice: Label = $Notice
 @onready var fade: ColorRect = $Fade
 @onready var heat: ColorRect = $Heat
+@onready var warp: ColorRect = $Warp
+
+var _marker_targets: Dictionary = {} # marker id -> body id to warp to
 
 ## The soundtrack's peak, timed to land as the tesseract opens.
 const MUSIC_PEAK_SECONDS := 210.0
@@ -48,9 +51,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		else:
 			travel_menu.open()
 	elif event.is_action_pressed("jump_black_hole") and space_view.plunge.phase == Plunge.Phase.NONE:
-		space_view.travel_to_body("sgr-a-star")
+		space_view.warp_to("sgr-a-star")
 	elif event.is_action_pressed("jump_home") and space_view.plunge.phase == Plunge.Phase.NONE:
-		space_view.travel_to_body("earth")
+		space_view.warp_to("earth")
+	elif event.is_action_pressed("warp_to_look") and space_view.plunge.phase == Plunge.Phase.NONE:
+		var target := _looked_at_target()
+		if target != "":
+			space_view.warp_to(target)
 	elif event.is_action_pressed("mute"):
 		music.stream_paused = not music.stream_paused
 
@@ -68,10 +75,14 @@ func _on_plunge_phase(phase: Plunge.Phase) -> void:
 
 func _update_plunge(p: Player) -> void:
 	var plunge := space_view.plunge
-	fade.color.a = plunge.white
+	fade.color.a = maxf(plunge.white, space_view.warp_flash)
+	warp.visible = space_view.warp_amount > 0.01
+	(warp.material as ShaderMaterial).set_shader_parameter("amount", space_view.warp_amount)
 	heat.visible = space_view.entry_heat > 0.01
 	(heat.material as ShaderMaterial).set_shader_parameter("heat", space_view.entry_heat)
 	var in_space := plunge.phase == Plunge.Phase.NONE
+	if space_view.is_warping():
+		notice.text = ""
 	info.visible = in_space
 	help.visible = in_space
 	marker_layer.visible = in_space and _markers_visible
@@ -112,6 +123,22 @@ func _process(_delta: float) -> void:
 		_update_markers()
 
 
+## The body whose marker is closest to the middle of the screen (within reach), or "".
+func _looked_at_target() -> String:
+	var middle := get_viewport().get_visible_rect().size * 0.5
+	var best := ""
+	var best_d := 220.0
+	for id in _markers:
+		var label: Label = _markers[id]
+		if not label.visible or not _marker_targets.has(id):
+			continue
+		var d := (label.position + Vector2(4, 9)).distance_to(middle)
+		if d < best_d:
+			best_d = d
+			best = _marker_targets[id]
+	return best
+
+
 func _update_markers() -> void:
 	var cam := space_view.player.camera
 	var seen := {}
@@ -124,9 +151,13 @@ func _update_markers() -> void:
 		var dist := Universe.catalog.body_position(id, Universe.sim_time).sub(space_view.player.pos).length()
 		if b["radius_m"] / maxf(dist, 1.0) > 0.03:
 			continue # it fills a good part of the view already: no label across its face
+		_marker_targets[id] = id
 		_show_marker(cam, id, world_pos, "%s  %s" % [b["name"], Fmt.distance(dist)], seen)
 	for fs in space_view.far_system_vectors():
 		var world_pos: Vector3 = fs["dir"] * space_view.space.far * 0.5
+		var star := Universe.catalog.primary_of(fs["id"])
+		if not star.is_empty():
+			_marker_targets[fs["id"]] = star["id"]
 		_show_marker(cam, fs["id"], world_pos, "✦ %s  %s" % [fs["name"], Fmt.distance(fs["distance"])], seen)
 	for id in _markers:
 		if not seen.has(id):

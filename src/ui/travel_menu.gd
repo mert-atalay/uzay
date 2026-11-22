@@ -72,7 +72,7 @@ func _add_children(parent_item: TreeItem, system_id: String, parent_id: Variant,
 func _on_selected() -> void:
 	var item := _tree.get_selected()
 	if item != null and item.get_metadata(0) != null:
-		space_view.travel_to_body(item.get_metadata(0))
+		space_view.warp_to(item.get_metadata(0))
 		close()
 
 

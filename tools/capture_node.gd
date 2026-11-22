@@ -15,6 +15,7 @@ var _menu := false
 var _pitch := 0.0
 var _heat := -1.0
 var _walk := false
+var _warp_target := ""
 var _fall := -1.0
 var _tess := -1.0
 var _leave := false
@@ -36,6 +37,7 @@ func _ready() -> void:
 			"pitch": _pitch = deg_to_rad(float(kv[1]))
 			"heat": _heat = float(kv[1])
 			"walk": _walk = true
+			"warp": _warp_target = kv[1]
 			"fall": _fall = float(kv[1])
 			"tesseract": _tess = float(kv[1])
 			"leave": _leave = true
@@ -74,6 +76,10 @@ func _process(_delta: float) -> void:
 		# Walk forward: press the key for the rest of the run.
 		Input.action_press("move_forward")
 		print("mode=%d on_ground=%s alt=%.2f speed=%.2f" % [sv.player.mode, sv.player.on_ground, sv.player.nearest_altitude, sv.player.velocity.length()])
+	if _warp_target != "" and _count == 4:
+		sv.warp_to(_warp_target)
+	if _warp_target != "":
+		print("warp u=%.2f system=%s alt=%s warping=%s" % [sv._warp.get("t", -1.0), sv.player.system_id, sv.player.nearest_altitude, sv.is_warping()])
 	if _menu and _count == 4:
 		(sv.get_node("Hud/TravelMenu") as TravelMenu).open()
 	if _count >= frames:

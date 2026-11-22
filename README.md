@@ -22,8 +22,9 @@ astronaut through the real Solar System, travel to nearby stars, and fall into S
 | Boost | Shift | Right trigger |
 | Throttle up / down | Scroll, or ] / [ | D-pad up / down |
 | Time speed | T | Back |
-| Travel menu (jump to any planet, star or the black hole) | Tab | Start |
-| Jump straight to the black hole / back to Earth | B / N | |
+| Travel menu (warp to any planet, star or the black hole) | Tab | Start |
+| Warp to the black hole / back to Earth | B / N | |
+| Warp to what you are looking at | J | X |
 | Music on / off | M | |
 | Third / first person | V | Right stick click |
 | Toggle markers | H | Y |

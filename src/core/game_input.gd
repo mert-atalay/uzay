@@ -24,6 +24,8 @@ func _enter_tree() -> void:
 	_key("mute", [KEY_M])
 	_key("jump_black_hole", [KEY_B])
 	_key("jump_home", [KEY_N])
+	_key("warp_to_look", [KEY_J])
+	_button("warp_to_look", JOY_BUTTON_X)
 	_key("toggle_view", [KEY_V])
 	_button("toggle_view", JOY_BUTTON_RIGHT_STICK)
 	_button("travel_menu", JOY_BUTTON_START)

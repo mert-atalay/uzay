@@ -103,7 +103,8 @@ func _process(delta: float) -> void:
 	if input.length() > 1.0:
 		input = input.normalized()
 
-	thrust_local = Vector3.ZERO if controls_locked else input
+	if not controls_locked:
+		thrust_local = input
 	if controls_locked:
 		velocity = Vector3.ZERO
 		mode = Mode.FLY
