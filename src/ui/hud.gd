@@ -37,6 +37,15 @@ func _ready() -> void:
 		music.play()
 	(space_view.get_node("Plunge") as Plunge).phase_changed.connect(_on_plunge_phase)
 	_setup_dread()
+	_flare = ColorRect.new()
+	_flare.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_flare.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var fm := ShaderMaterial.new()
+	fm.shader = load("res://shaders/lens_flare.gdshader")
+	_flare.material = fm
+	_flare.visible = false
+	add_child(_flare)
+	move_child(_flare, 0)
 
 
 const HELP_KEYS := "F12 screenshot · B black hole · N Earth · J warp to what you look at · Tab travel menu · WASD move · Space/Ctrl up/down · Q/E roll · mouse look · Shift boost · scroll or [ ] throttle · T time speed · V view · H markers · M music · F11 window · Esc free mouse"
@@ -58,6 +67,7 @@ func _input(event: InputEvent) -> void:
 
 var _using_pad := false
 var _vignette: ColorRect
+var _flare: ColorRect
 var _drone: AudioStreamPlayer
 ## 0 far from the black hole, 1 at its horizon. Drives the darkening view and the drone.
 var _dread := 0.0
@@ -103,6 +113,45 @@ func _update_dread(p: Player, delta: float) -> void:
 		elif (_dread <= 0.01 or music.stream_paused) and _drone.playing:
 			_drone.stop()
 		_drone.volume_db = lerpf(-34.0, -5.0, _dread)
+
+
+## The star's lens flare, hidden behind any planet or moon that covers it.
+func _update_flare(p: Player) -> void:
+	_flare.visible = false
+	if space_view.plunge.phase != Plunge.Phase.NONE or space_view.warp_amount > 0.3:
+		return
+	var primary := Universe.catalog.primary_of(p.system_id)
+	if primary.is_empty() or primary["kind"] != "star" or not space_view.bodies.has(primary["id"]):
+		return
+	var cam := p.camera
+	var origin := cam.global_position
+	var star_node: Node3D = space_view.bodies[primary["id"]]
+	var occluders := []
+	for id in space_view.bodies:
+		var node: Node3D = space_view.bodies[id]
+		var b := Universe.catalog.body(id)
+		if id == primary["id"] or b.is_empty() or b["kind"] in ["star", "black-hole"] or not node.visible:
+			continue
+		occluders.append([node.global_position - origin, node.global_basis.get_scale().x])
+	var basis := cam.global_basis
+	var size := get_viewport().get_visible_rect().size
+	var state := LensFlareMath.compute(star_node.global_position - origin, star_node.global_basis.get_scale().x,
+		-basis.z, basis.x, basis.y, deg_to_rad(cam.fov), size.x / maxf(size.y, 1.0), occluders)
+	if not state["visible"]:
+		return
+	# Inside thick air the sky's own glow takes over from the lens.
+	var soften := 1.0
+	if not space_view.ground.is_empty():
+		soften = 1.0 - 0.18 * (1.0 - smoothstep(0.0, 60000.0, float(space_view.ground["sea_altitude"])))
+	var m := _flare.material as ShaderMaterial
+	_flare.visible = true
+	m.set_shader_parameter("star_ndc", state["ndc"])
+	m.set_shader_parameter("star_color", UniverseCatalog.color_of(primary["star_color"], Color(1.0, 0.95, 0.85)))
+	m.set_shader_parameter("intensity", float(state["intensity"]) * soften)
+	m.set_shader_parameter("visibility", state["visibility"])
+	m.set_shader_parameter("diamond_ring", state["diamond_ring"])
+	m.set_shader_parameter("aspect", size.x / maxf(size.y, 1.0))
+	m.set_shader_parameter("roll", basis.get_euler().z * 0.5)
 
 
 ## How much slower your clock runs than one far away, hovering at `altitude` above the horizon.
@@ -239,6 +288,7 @@ func _process(delta: float) -> void:
 		if p.nearest_altitude < rs * 40.0:
 			info.text += "\n1 hour here = %s on Earth" % Fmt.duration(3600.0 * time_dilation(p.nearest_altitude, rs))
 	_update_dread(p, delta)
+	_update_flare(p)
 	if Time.get_ticks_msec() / 1000.0 < _shot_note_until:
 		info.text += "\n" + info_note
 	if marker_layer.visible:

@@ -23,7 +23,7 @@ Sagittarius A*. The plan and design pillars live in the project's plan doc; the 
 - `src/game/plunge.gd` (event horizon → fall → tesseract → exit state machine; maths in `src/sim/plunge_math.gd`)
   and `tesseract.gd` (endless wrapped lattice of light strands, MultiMesh).
 - `src/game/astronaut_view.gd` draws the astronaut in its own SubViewport laid over the main view (the main
-  camera's near plane is kilometres away in orbit, so a 2 m figure cannot be drawn by it).
+  camera's near plane is kilometres away in orbit, so a 2 m figure cannot be drawn by it). First person (V / R3) shows gloved hands fixed to that camera.
 - Ground: `src/sim/terrain_field.gd` (CPU height) and `shaders/terrain.gdshader` (GPU, same formula: keep
   them in step), drawn by `src/game/terrain_patch.gd` as a disc under the player. `src/sim/body_frame.gd`
   does planet-fixed ↔ system axes in 64-bit. Near a body the player turns with its spin
@@ -34,8 +34,9 @@ Sagittarius A*. The plan and design pillars live in the project's plan doc; the 
   hole lens both use it; `core = 1` gives the dense galactic-centre sky). `src/game/star_points.gd` draws the
   naked-eye stars as points. Anything drawn "at infinity" must set `POSITION.z = 0.0` in its vertex shader:
   a sphere scaled to just inside the far plane gets clipped in a disc at the centre of the view.
-- Stars: `shaders/star.gdshader` (surface) plus a camera-facing `Glow` child (`star_glow.gdshader`: corona up
-  close, glare from afar). `src/game/cloud_layer.gd` (Earth's clouds from inside the air) and
+- Stars: `shaders/star.gdshader` (plasma surface in the star's palette, ported from the prototype) plus a
+  camera-facing `Glow` child (`star_glow.gdshader`: corona up close, glare from afar) and a HUD lens flare
+  (`shaders/lens_flare.gdshader`, eclipses in `src/sim/lens_flare_math.gd`). `src/game/cloud_layer.gd` (Earth's clouds from inside the air) and
   `src/game/surface_rocks.gd` (rocks hashed per cell on the cube face) add detail near the ground.
 - Camera auto-exposure: in Godot a *higher* sensitivity limit means a *darker* picture (`player.gd`).
 - `src/ui/` HUD and the Tab travel menu. F12 / L3 saves a screenshot and a .txt of state next to the exe.
@@ -71,7 +72,7 @@ Screenshots without a monitor (e.g. in a cloud container), using the real Forwar
 ```sh
 VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json xvfb-run -a -s "-screen 0 1600x900x24" \
   godot --resolution 1600x900 -- capture=/tmp/shot.png frames=30 altitude=400000 look=sun
-# env UZAY_HIDE=Astronaut,Sky hides nodes, UZAY_DUMP=1 lists what is visible. other capture args: goto=<body id> yaw=<deg> menu=1 fall=<seconds into the fall> tesseract=<seconds> leave=1 pitch=<deg up from straight down> walk=1 heat=<0..1>
+# env UZAY_HIDE=Astronaut,Sky hides nodes, UZAY_DUMP=1 lists what is visible. other capture args: goto=<body id> yaw=<deg> menu=1 fall=<seconds into the fall> tesseract=<seconds> leave=1 pitch=<deg up from straight down> walk=1 heat=<0..1> fp=1 (first person)
 ```
 
 Scripts loaded by a `-s` script can't see autoloads, so anything using `Universe` must run inside the

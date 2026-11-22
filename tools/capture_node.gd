@@ -19,6 +19,7 @@ var _warp_target := ""
 var _fall := -1.0
 var _tess := -1.0
 var _leave := false
+var _fp := false
 
 
 func _ready() -> void:
@@ -41,6 +42,7 @@ func _ready() -> void:
 			"fall": _fall = float(kv[1])
 			"tesseract": _tess = float(kv[1])
 			"leave": _leave = true
+			"fp": _fp = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	var view := get_parent() as SpaceView
 	if _goto != "":
@@ -55,6 +57,11 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	_count += 1
+	if _count == 2 and _fp:
+		var ev := InputEventAction.new()
+		ev.action = "toggle_view"
+		ev.pressed = true
+		Input.parse_input_event(ev)
 	if _count == 2 and OS.get_environment("UZAY_RED") != "":
 		(get_parent().get_node("WorldEnvironment") as WorldEnvironment).environment.background_color = Color(0.5, 0.0, 0.0)
 	if _count == 2 and OS.get_environment("UZAY_HIDE") != "":

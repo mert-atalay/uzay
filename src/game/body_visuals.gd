@@ -58,8 +58,12 @@ static func build(b: Dictionary, materials: Array) -> MeshInstance3D:
 			var m := ShaderMaterial.new()
 			m.shader = STAR_SHADER
 			m.set_shader_parameter("surface_tex", texture("sun.jpg"))
+			var pal: Array = b["palette"]
+			m.set_shader_parameter("color_core", UniverseCatalog.color_of(pal[0], Color(1, 0.96, 0.82)))
+			m.set_shader_parameter("color_mid", UniverseCatalog.color_of(pal[1], Color(1, 0.62, 0.18)))
+			m.set_shader_parameter("color_limb", UniverseCatalog.color_of(pal[2], Color(0.8, 0.24, 0.0)))
+			m.set_shader_parameter("seed", float(b.get("seed", 0)) * 0.13)
 			var tint := UniverseCatalog.color_of(b["star_color"], Color(1, 0.95, 0.85))
-			m.set_shader_parameter("tint", tint)
 			mi.material_override = m
 			# Corona and glare: a square that always faces the camera.
 			var glow := MeshInstance3D.new()

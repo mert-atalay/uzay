@@ -1,6 +1,7 @@
 class_name AstronautView
 extends CanvasLayer
-## Draws the astronaut you are flying, seen from just behind (V switches to first person).
+## Draws the astronaut you are flying, seen from just behind (V / R3 switches to first person,
+## where you see your own gloved hands instead).
 ##
 ## At true scale the main camera's near plane is kilometres away when you are in orbit, so a
 ## 2 m astronaut can never be drawn by it. Instead the astronaut lives in a small world of its
@@ -21,6 +22,13 @@ var _legs: Array[Node3D] = []
 var _flames: Array[MeshInstance3D] = []
 var _flame_material: StandardMaterial3D
 var _lean := Vector3.ZERO
+## First person: the astronaut's own gloved hands and forearms, fixed to the camera.
+var _first_person := false
+var _hands: Node3D
+var _hand_pivots: Array[Node3D] = []
+var _fingers: Array[Node3D] = [] # curl pivots, five per hand
+var _look_lag := Vector2.ZERO
+var _prev_basis := Basis.IDENTITY
 var _thrust := 0.0
 var _time := 0.0
 
@@ -40,7 +48,7 @@ func _ready() -> void:
 	env.background_mode = Environment.BG_CLEAR_COLOR
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.5, 0.6, 0.8)
-	env.ambient_light_energy = 0.06
+	env.ambient_light_energy = 0.14
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
 	var we := WorldEnvironment.new()
 	we.environment = env
@@ -61,6 +69,8 @@ func _ready() -> void:
 		_build_model()
 	else:
 		_build_suit()
+	_build_hands()
+	_hands.visible = false
 
 	var rect := TextureRect.new()
 	rect.texture = _viewport.get_texture()
@@ -78,8 +88,10 @@ func _fit() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("toggle_view"):
-		visible = not visible
-		_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if visible else SubViewport.UPDATE_DISABLED
+		# Third person (whole astronaut ahead of you) <-> first person (your own hands).
+		_first_person = not _first_person
+		_body.visible = not _first_person
+		_hands.visible = _first_person
 
 
 func _process(delta: float) -> void:
@@ -95,6 +107,9 @@ func _process(delta: float) -> void:
 		_light.basis = Basis.looking_at(-to_star.normalized(), up)
 	_light.light_color = space_view.star_color
 	_light.light_energy = space_view.star_energy
+	if _first_person:
+		_animate_hands(player, delta)
+		return
 
 	# Lean into the direction of thrust, and drift a little when idle.
 	var push := player.thrust_local
@@ -164,6 +179,106 @@ func _ball(radius: float) -> SphereMesh:
 	s.radius = radius
 	s.height = radius * 2.0
 	return s
+
+
+## Two gloved hands at the bottom of the view, built from simple shapes in the suit's colours:
+## a white sleeve, a grey wrist ring, a padded glove with a darker palm, four fingers and a thumb.
+func _build_hands() -> void:
+	_hands = Node3D.new()
+	_camera.add_child(_hands)
+	var sleeve := _material(Color(0.74, 0.74, 0.72), 0.85)
+	var ring := _material(Color(0.55, 0.56, 0.6), 0.4, 0.7)
+	var glove := _material(Color(0.82, 0.82, 0.8), 0.7)
+	var palm := _material(Color(0.2, 0.2, 0.22), 0.8)
+	var accent := _material(Color(0.85, 0.3, 0.08), 0.6)
+	for side: float in [-1.0, 1.0]:
+		var pivot := Node3D.new() # the wrist
+		pivot.position = Vector3(side * 0.15, -0.17, -0.42)
+		pivot.basis = _hand_basis(side, 0.0, 0.0, 0.0)
+		_hands.add_child(pivot)
+		_hand_pivots.append(pivot)
+		# Forearm running back and down out of view.
+		# The forearm drops away down and back towards the bottom corner of the view.
+		var forearm := _part(pivot, _capsule(0.05, 0.5), sleeve, Vector3(0.0, -0.11, 0.22), Vector3(2.04, 0.0, 0.0))
+		var band := CylinderMesh.new()
+		band.top_radius = 0.052
+		band.bottom_radius = 0.052
+		band.height = 0.025
+		_part(forearm, band, accent, Vector3(0.0, -0.1, 0.0))
+		var cuff := CylinderMesh.new()
+		cuff.top_radius = 0.05
+		cuff.bottom_radius = 0.056
+		cuff.height = 0.035
+		_part(pivot, cuff, ring, Vector3(0.0, -0.005, 0.0), Vector3(PI / 2.0, 0.0, 0.0))
+		# A space glove is big and padded: the glove is built at hand size and scaled up.
+		var glove_root := Node3D.new()
+		glove_root.scale = Vector3.ONE * 1.6
+		glove_root.position = Vector3(0.0, 0.0, -0.01)
+		pivot.add_child(glove_root)
+		# Back of the hand and the palm under it.
+		var back := _part(glove_root, _ball(0.052), glove, Vector3(0.0, 0.004, -0.058))
+		back.scale = Vector3(1.05, 0.5, 1.2)
+		var under := _part(glove_root, _ball(0.048), palm, Vector3(0.0, -0.012, -0.058))
+		under.scale = Vector3(1.0, 0.42, 1.15)
+		# Fingers: two segments each, hinged so they can curl.
+		for f in 4:
+			var knuckle := Node3D.new()
+			knuckle.position = Vector3((f - 1.5) * 0.023 * -side, 0.0, -0.115)
+			glove_root.add_child(knuckle)
+			_part(knuckle, _capsule(0.0115, 0.05), glove, Vector3(0.0, 0.0, -0.02), Vector3(PI / 2.0, 0.0, 0.0))
+			var tip := Node3D.new()
+			tip.position = Vector3(0.0, 0.0, -0.042)
+			knuckle.add_child(tip)
+			_part(tip, _capsule(0.0105, 0.04), glove, Vector3(0.0, 0.0, -0.016), Vector3(PI / 2.0, 0.0, 0.0))
+			_fingers.append(knuckle)
+		var thumb := Node3D.new()
+		thumb.position = Vector3(side * 0.05, -0.005, -0.07)
+		thumb.rotation = Vector3(0.0, side * 0.7, 0.0)
+		glove_root.add_child(thumb)
+		_part(thumb, _capsule(0.013, 0.055), glove, Vector3(0.0, 0.0, -0.022), Vector3(PI / 2.0, 0.0, 0.0))
+		_fingers.append(thumb)
+
+
+## Orientation of a hand: fingers pointing ahead, a little down and inwards, back of the glove
+## up. `lift` raises the fingers, `yaw` turns them sideways, `roll` twists the wrist.
+static func _hand_basis(side: float, lift: float, yaw: float, roll: float) -> Basis:
+	var fingers := Vector3(-side * 0.18 + yaw, -0.32 + lift, -1.0).normalized()
+	return Basis.looking_at(fingers, Vector3.UP) * Basis(Vector3.FORWARD, side * 0.25 + roll)
+
+
+## The hands drift as you breathe, lag behind when you turn, push forward when you thrust and
+## swing when you walk. Fingers relax open in flight and curl a little while thrusting.
+func _animate_hands(player: Player, delta: float) -> void:
+	# How the view turned since last frame, in the camera's own axes.
+	var turn := (_prev_basis.inverse() * player.global_basis).get_euler()
+	_prev_basis = player.global_basis
+	var lag_target := Vector2(clampf(turn.y / maxf(delta, 1.0e-3), -3.0, 3.0), clampf(turn.x / maxf(delta, 1.0e-3), -3.0, 3.0)) * 0.03
+	_look_lag = _look_lag.lerp(lag_target, 1.0 - exp(-8.0 * delta))
+	var push := player.thrust_local
+	_thrust = lerpf(_thrust, clampf(push.length(), 0.0, 1.0), 1.0 - exp(-6.0 * delta))
+	var walking := player.mode == Player.Mode.WALK
+	var swing := sin(player.stride * 2.6) * clampf(player.velocity.length() / 4.0, 0.0, 1.2) if walking else 0.0
+	var falling := space_view.plunge.fall_progress()
+	for i in _hand_pivots.size():
+		var side := -1.0 if i == 0 else 1.0
+		var pivot := _hand_pivots[i]
+		var breathe := sin(_time * 0.9 + i * 1.3) * 0.006
+		var reach := -0.07 * _thrust * maxf(-push.z, 0.0) + 0.04 * maxf(push.z, 0.0)
+		pivot.position = Vector3(side * 0.15 + _look_lag.x * 0.4 - push.x * 0.03,
+			-0.17 + breathe - _look_lag.y * 0.3 - push.y * 0.03 + absf(swing) * 0.01,
+			-0.42 + reach + (swing * side) * 0.05)
+		pivot.basis = _hand_basis(side, 0.25 * _thrust * maxf(-push.z, 0.0) + falling * sin(_time * 2.0 + i) * 0.3,
+			_look_lag.x * 0.5, falling * sin(_time * 1.6 + i * 2.0) * 0.25)
+	var curl := 0.25 + 0.55 * _thrust + 0.3 * falling
+	for j in _fingers.size():
+		var is_thumb := j % 5 == 4
+		var f := _fingers[j]
+		var wobble := sin(_time * 0.7 + j) * 0.04
+		if is_thumb:
+			f.rotation.x = -0.2 * curl + wobble
+		else:
+			f.rotation.x = -(curl + wobble + (j % 5) * 0.06)
+			(f.get_child(1) as Node3D).rotation.x = -(curl * 1.1 + wobble)
 
 
 ## The modelled astronaut (Poly by Google, CC BY), turned to face away from the camera, with
