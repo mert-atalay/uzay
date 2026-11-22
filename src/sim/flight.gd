@@ -10,7 +10,7 @@ const MAX_SPEED := 1.0e14 # m/s
 ## Base rate: at full throttle you cover this fraction of your altitude per second.
 const BASE_RATE := 0.6
 ## Extra caution near black holes: the approach should feel heavy and slow.
-const BLACK_HOLE_DAMPING := 0.15
+const BLACK_HOLE_DAMPING := 0.3
 
 
 ## altitude: distance to the nearest surface (or event horizon) in metres.

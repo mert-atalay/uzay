@@ -97,7 +97,7 @@ func travel_to_body(body_id: String) -> void:
 	if b["kind"] == "star":
 		altitude = b["radius_m"] * 5.0
 	elif b["kind"] == "black-hole":
-		altitude = b["radius_m"] * 24.0
+		altitude = b["radius_m"] * 9.0
 	_place_player_near(body_id, altitude)
 
 

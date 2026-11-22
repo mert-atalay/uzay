@@ -81,7 +81,7 @@ offset_top = -40.0
 offset_right = 1200.0
 offset_bottom = -16.0
 label_settings = SubResource("help_font")
-text = "Tab travel menu · WASD move · Space/Ctrl up/down · Q/E roll · mouse look · Shift boost · scroll or [ ] throttle · T time speed · V view · H markers · M music · Esc free mouse"
+text = "B black hole · N Earth · Tab travel menu · WASD move · Space/Ctrl up/down · Q/E roll · mouse look · Shift boost · scroll or [ ] throttle · T time speed · V view · H markers · M music · Esc free mouse"
 
 [node name="Notice" type="Label" parent="Hud"]
 anchors_preset = 5

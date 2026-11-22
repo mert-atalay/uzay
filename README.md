@@ -23,12 +23,13 @@ astronaut through the real Solar System, travel to nearby stars, and fall into S
 | Throttle up / down | Scroll, or ] / [ | D-pad up / down |
 | Time speed | T | Back |
 | Travel menu (jump to any planet, star or the black hole) | Tab | Start |
+| Jump straight to the black hole / back to Earth | B / N | |
 | Music on / off | M | |
 | Third / first person | V | Right stick click |
 | Toggle markers | H | Y |
 | Free the mouse | Esc | |
 
-**The black hole:** Tab → Sagittarius A*. It pulls you in as you get close. Cross the event horizon
+**The black hole:** press B to jump next to Sagittarius A*, then hold W. It pulls you in as you get close. Cross the event horizon
 and there is no way back: you fall for about a minute, then the tesseract opens. Press Enter there
 to let go.
 

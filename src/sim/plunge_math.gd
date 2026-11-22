@@ -7,8 +7,8 @@ const FALL_SECONDS := 70.0
 ## How deep you get before the tesseract takes over, as a fraction of the horizon radius.
 const DEEPEST := 0.12
 ## Inward drift at the horizon, in horizon radii per second. For Sgr A* (rs = 12.7 million km)
-## that is about 0.85 c, close to what a real infalling observer would have.
-const PULL_AT_HORIZON := 0.02
+## that is about twice light speed: faster than real, so the last stretch does not drag.
+const PULL_AT_HORIZON := 0.05
 
 
 ## Inward drift speed (m/s) at distance `r` from a hole with horizon radius `rs`: inverse square,

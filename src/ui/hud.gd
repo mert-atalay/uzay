@@ -46,6 +46,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			travel_menu.close()
 		else:
 			travel_menu.open()
+	elif event.is_action_pressed("jump_black_hole") and space_view.plunge.phase == Plunge.Phase.NONE:
+		space_view.travel_to_body("sgr-a-star")
+	elif event.is_action_pressed("jump_home") and space_view.plunge.phase == Plunge.Phase.NONE:
+		space_view.travel_to_body("earth")
 	elif event.is_action_pressed("mute"):
 		music.stream_paused = not music.stream_paused
 
