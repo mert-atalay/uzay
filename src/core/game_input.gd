@@ -47,6 +47,10 @@ func _enter_tree() -> void:
 	_button("throttle_down", JOY_BUTTON_DPAD_DOWN)
 	_button("time_scale", JOY_BUTTON_BACK)
 	_button("toggle_markers", JOY_BUTTON_Y)
+	_button("jump_black_hole", JOY_BUTTON_DPAD_RIGHT)
+	_button("jump_home", JOY_BUTTON_DPAD_LEFT)
+	_axis("move_down", JOY_AXIS_TRIGGER_LEFT, 1.0)
+	_key("fullscreen", [KEY_F11])
 
 
 func _ensure(action: String) -> void:
@@ -65,6 +69,7 @@ func _key(action: String, keys: Array) -> void:
 func _axis(action: String, axis: JoyAxis, direction: float) -> void:
 	_ensure(action)
 	var ev := InputEventJoypadMotion.new()
+	ev.device = -1 # any controller, whichever slot Windows gave it
 	ev.axis = axis
 	ev.axis_value = direction
 	InputMap.action_add_event(action, ev)
@@ -73,5 +78,6 @@ func _axis(action: String, axis: JoyAxis, direction: float) -> void:
 func _button(action: String, button: JoyButton) -> void:
 	_ensure(action)
 	var ev := InputEventJoypadButton.new()
+	ev.device = -1
 	ev.button_index = button
 	InputMap.action_add_event(action, ev)

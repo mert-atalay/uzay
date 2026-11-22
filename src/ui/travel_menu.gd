@@ -15,17 +15,18 @@ func _ready() -> void:
 	var box := VBoxContainer.new()
 	add_child(box)
 	var title := Label.new()
-	title.text = "TRAVEL TO   (Tab to close)"
+	title.text = "TRAVEL TO   (Tab / Start to close)"
 	title.add_theme_font_size_override("font_size", 14)
 	box.add_child(title)
 	_tree = Tree.new()
 	_tree.hide_root = true
 	_tree.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tree.item_activated.connect(_on_activated)
-	_tree.item_selected.connect(_on_selected)
+	_tree.item_mouse_selected.connect(func(_pos: Vector2, _button: int) -> void: _on_selected())
 	box.add_child(_tree)
 	var hint := Label.new()
-	hint.text = "Click a destination. Double-click a system to open or close it."
+	hint.text = "Click a destination, or move with the D-pad / arrows and press A / Enter. B / Esc closes."
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.add_theme_font_size_override("font_size", 11)
 	hint.modulate = Color(1, 1, 1, 0.6)
 	box.add_child(hint)
@@ -36,10 +37,20 @@ func open() -> void:
 	visible = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_tree.grab_focus()
+	space_view.player.input_blocked = true
+	# Start on the first system row so a controller or the arrow keys have somewhere to move from.
+	var first := _tree.get_root().get_first_child()
+	for item in _tree.get_root().get_children():
+		if not item.collapsed:
+			first = item
+	if first != null:
+		first.select(0)
+		_tree.scroll_to_item(first)
 
 
 func close() -> void:
 	visible = false
+	space_view.player.input_blocked = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	closed.emit()
 
@@ -52,7 +63,6 @@ func _rebuild() -> void:
 		var sys_item := _tree.create_item(root)
 		var dist: float = s["distance_ly"]
 		sys_item.set_text(0, "%s   %s" % [s["name"], ("home" if dist == 0.0 else "%s ly" % dist)])
-		sys_item.set_selectable(0, false)
 		sys_item.collapsed = s["id"] != space_view.player.system_id
 		_add_children(sys_item, s["id"], null, 0)
 
@@ -76,7 +86,18 @@ func _on_selected() -> void:
 		close()
 
 
+## Enter, controller A or a double click: go there, or open/close a star system row.
 func _on_activated() -> void:
 	var item := _tree.get_selected()
-	if item != null:
+	if item == null:
+		return
+	if item.get_metadata(0) != null:
+		_on_selected()
+	else:
 		item.collapsed = not item.collapsed
+
+
+func _input(event: InputEvent) -> void:
+	if visible and event.is_action_pressed("ui_cancel"):
+		get_viewport().set_input_as_handled()
+		close()

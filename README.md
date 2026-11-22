@@ -16,23 +16,27 @@ astronaut through the real Solar System, travel to nearby stars, and fall into S
 | Action | Keyboard / mouse | Gamepad |
 | --- | --- | --- |
 | Move | W A S D | Left stick |
-| Up / down | Space / Ctrl | A / B |
+| Up / down | Space / Ctrl | A / B (or left trigger for down) |
 | Look | Mouse | Right stick |
 | Roll | Q / E | LB / RB |
 | Boost | Shift | Right trigger |
 | Throttle up / down | Scroll, or ] / [ | D-pad up / down |
 | Time speed | T | Back |
 | Travel menu (warp to any planet, star or the black hole) | Tab | Start |
-| Warp to the black hole / back to Earth | B / N | |
+| Warp to the black hole / back to Earth | B / N | D-pad right / left |
 | Warp to what you are looking at | J | X |
 | Music on / off | M | |
 | Third / first person | V | Right stick click |
 | Toggle markers | H | Y |
 | Free the mouse | Esc | |
+| Fullscreen / window | F11 | |
+
+The game starts fullscreen. In the travel menu, move with the D-pad or arrows, A / Enter picks a
+destination, B / Esc closes. The bottom-left hint line names the controller the game has found.
 
 **The black hole:** press B to jump next to Sagittarius A*, then hold W. It pulls you in as you get close. Cross the event horizon
-and there is no way back: you fall for about a minute, then the tesseract opens. Press Enter there
-to let go.
+and there is no way back: you fall for about a minute, then the tesseract opens. Press Enter (Start on a
+controller) there to let go.
 
 **Landing:** fly down to any rocky planet or moon. Dive fast through air and it burns around you.
 Touch the ground and you are on foot: W A S D walk, Shift runs, Space jumps (try the Moon). Hold

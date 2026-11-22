@@ -30,6 +30,8 @@ var nearest_body_id: String = ""
 var nearest_is_black_hole: bool = false
 ## True while something else is moving the astronaut (the fall into a black hole). You can still look.
 var controls_locked: bool = false
+## True while the travel menu is open: sticks and buttons drive the menu, not the astronaut.
+var input_blocked: bool = false
 ## True on frames where the ground is holding you up.
 var on_ground: bool = false
 ## Set by SpaceView when there is solid ground nearby: which way is up (world axes) and how
@@ -65,6 +67,8 @@ func _ready() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if input_blocked:
+		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		_look(-event.relative.x * MOUSE_SENSITIVITY, -event.relative.y * MOUSE_SENSITIVITY)
 	elif event is InputEventMouseButton and event.pressed:
@@ -98,6 +102,8 @@ func _look(yaw: float, pitch: float) -> void:
 
 func _process(delta: float) -> void:
 	var look := Input.get_vector("look_left", "look_right", "look_down", "look_up")
+	if input_blocked:
+		look = Vector2.ZERO
 	if look != Vector2.ZERO:
 		_look(-look.x * STICK_LOOK_SPEED * delta, look.y * STICK_LOOK_SPEED * delta)
 	var roll := Input.get_axis("roll_right", "roll_left")
@@ -111,6 +117,8 @@ func _process(delta: float) -> void:
 	)
 	if input.length() > 1.0:
 		input = input.normalized()
+	if input_blocked:
+		input = Vector3.ZERO
 
 	if not controls_locked:
 		thrust_local = input

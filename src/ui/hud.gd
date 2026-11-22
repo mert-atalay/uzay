@@ -27,6 +27,8 @@ const MUSIC_DB := -9.0
 
 func _ready() -> void:
 	travel_menu.space_view = space_view
+	_set_pad(not Input.get_connected_joypads().is_empty())
+	Input.joy_connection_changed.connect(func(_device: int, connected: bool) -> void: _set_pad(connected))
 	var stream := load("res://assets/music/interstellar_main_theme.mp3") as AudioStreamMP3
 	if stream != null:
 		stream.loop = true
@@ -36,7 +38,41 @@ func _ready() -> void:
 	(space_view.get_node("Plunge") as Plunge).phase_changed.connect(_on_plunge_phase)
 
 
+const HELP_KEYS := "B black hole · N Earth · J warp to what you look at · Tab travel menu · WASD move · Space/Ctrl up/down · Q/E roll · mouse look · Shift boost · scroll or [ ] throttle · T time speed · V view · H markers · M music · F11 window · Esc free mouse"
+const HELP_PAD := "D-pad right black hole · D-pad left Earth · X warp to what you look at · Start travel menu · left stick move · A up / jump · B or LT down · right stick look · LB/RB roll · RT boost · D-pad up/down throttle · R3 view · Y markers · Back time speed"
+
+
+func _input(event: InputEvent) -> void:
+	# Show the hints for whatever the player is holding.
+	if event is InputEventJoypadButton or (event is InputEventJoypadMotion and absf(event.axis_value) > 0.5):
+		_set_pad(true)
+	elif event is InputEventKey:
+		_set_pad(false)
+	if event.is_action_pressed("fullscreen"):
+		var full := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if full else DisplayServer.WINDOW_MODE_FULLSCREEN)
+
+
+var _using_pad := false
+
+
+## Show the hints for whatever the player is holding, and name the controller so it is plain
+## whether the game has seen one at all.
+func _set_pad(on: bool) -> void:
+	_using_pad = on
+	var pads := Input.get_connected_joypads()
+	if on and not pads.is_empty():
+		help.text = "%s\nController: %s" % [HELP_PAD, Input.get_joy_name(pads[0])]
+	else:
+		help.text = HELP_KEYS + ("" if not pads.is_empty() else "\nNo controller detected")
+
+
 func _unhandled_input(event: InputEvent) -> void:
+	if travel_menu.visible:
+		# The menu owns the controller while it is open; only its own toggle gets through.
+		if event.is_action_pressed("travel_menu"):
+			travel_menu.close()
+		return
 	if event.is_action_pressed("toggle_markers"):
 		_markers_visible = not _markers_visible
 		marker_layer.visible = _markers_visible
@@ -104,7 +140,7 @@ func _update_plunge(p: Player) -> void:
 				notice.modulate = Color(1.0, 0.9, 0.8, clampf(minf(plunge.t, 8.0 - plunge.t), 0.0, 1.0))
 		Plunge.Phase.TESSERACT:
 			if plunge.can_leave():
-				notice.text = "Press Enter to let go"
+				notice.text = "Press Start to let go" if _using_pad else "Press Enter to let go"
 				notice.modulate = Color(1.0, 0.92, 0.8, 0.5 + 0.3 * sin(Time.get_ticks_msec() * 0.003))
 
 

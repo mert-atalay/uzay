@@ -94,6 +94,7 @@ offset_left = 24.0
 offset_top = -40.0
 offset_right = 1200.0
 offset_bottom = -16.0
+grow_vertical = 0
 label_settings = SubResource("help_font")
 text = "B black hole · N Earth · J warp to what you look at · Tab travel menu · WASD move · Space/Ctrl up/down · Q/E roll · mouse look · Shift boost · scroll or [ ] throttle · T time speed · V view · H markers · M music · Esc free mouse"
 
