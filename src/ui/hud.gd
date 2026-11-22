@@ -13,6 +13,12 @@ var _markers_visible := true
 @onready var marker_layer: Control = $Markers
 @onready var travel_menu: TravelMenu = $TravelMenu
 @onready var music: AudioStreamPlayer = $Music
+@onready var notice: Label = $Notice
+@onready var fade: ColorRect = $Fade
+
+## The soundtrack's peak, timed to land as the tesseract opens.
+const MUSIC_PEAK_SECONDS := 210.0
+const MUSIC_DB := -9.0
 
 
 func _ready() -> void:
@@ -21,8 +27,9 @@ func _ready() -> void:
 	if stream != null:
 		stream.loop = true
 		music.stream = stream
-		music.volume_db = -9.0
+		music.volume_db = MUSIC_DB
 		music.play()
+	(space_view.get_node("Plunge") as Plunge).phase_changed.connect(_on_plunge_phase)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -31,7 +38,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		marker_layer.visible = _markers_visible
 	elif event.is_action_pressed("time_scale"):
 		Universe.cycle_time_scale()
-	elif event.is_action_pressed("travel_menu"):
+	elif space_view.plunge.can_leave() and (event.is_action_pressed("travel_menu") \
+			or (event is InputEventKey and event.pressed and event.keycode in [KEY_ENTER, KEY_KP_ENTER])):
+		space_view.plunge.leave()
+	elif event.is_action_pressed("travel_menu") and space_view.plunge.phase == Plunge.Phase.NONE:
 		if travel_menu.visible:
 			travel_menu.close()
 		else:
@@ -40,8 +50,49 @@ func _unhandled_input(event: InputEvent) -> void:
 		music.stream_paused = not music.stream_paused
 
 
+func _on_plunge_phase(phase: Plunge.Phase) -> void:
+	if phase == Plunge.Phase.FALLING:
+		# Nothing gets out, and the music knows it: line the peak up with the end of the fall.
+		travel_menu.visible = false
+		music.stream_paused = false
+		music.play(maxf(MUSIC_PEAK_SECONDS - PlungeMath.FALL_SECONDS, 0.0))
+		music.volume_db = -3.0
+	elif phase == Plunge.Phase.NONE:
+		music.volume_db = MUSIC_DB
+
+
+func _update_plunge(p: Player) -> void:
+	var plunge := space_view.plunge
+	fade.color.a = plunge.white
+	var in_space := plunge.phase == Plunge.Phase.NONE
+	info.visible = in_space
+	help.visible = in_space
+	marker_layer.visible = in_space and _markers_visible
+	notice.text = ""
+	match plunge.phase:
+		Plunge.Phase.NONE:
+			if p.nearest_is_black_hole:
+				var rs: float = Universe.catalog.body(p.nearest_body_id)["radius_m"]
+				var away := maxf(p.nearest_altitude, 0.0) / rs
+				if away < 0.5:
+					notice.text = "POINT OF NO RETURN   %.2f horizon radii to go" % away
+					notice.modulate = Color(1.0, 0.35, 0.25, 0.6 + 0.4 * sin(Time.get_ticks_msec() * 0.008))
+				elif away < 6.0:
+					notice.text = "Event horizon in %.1f radii. It is pulling you in." % away
+					notice.modulate = Color(1.0, 0.8, 0.55, 0.85)
+		Plunge.Phase.FALLING:
+			if plunge.t < 8.0:
+				notice.text = "You crossed the event horizon. Nothing comes back from here."
+				notice.modulate = Color(1.0, 0.9, 0.8, clampf(minf(plunge.t, 8.0 - plunge.t), 0.0, 1.0))
+		Plunge.Phase.TESSERACT:
+			if plunge.can_leave():
+				notice.text = "Press Enter to let go"
+				notice.modulate = Color(1.0, 0.92, 0.8, 0.5 + 0.3 * sin(Time.get_ticks_msec() * 0.003))
+
+
 func _process(_delta: float) -> void:
 	var p := space_view.player
+	_update_plunge(p)
 	var nearest := Universe.catalog.body(p.nearest_body_id)
 	var system_name: String = Universe.catalog.system(p.system_id).get("name", "")
 	info.text = "%s\n%s   altitude %s\nspeed %s   throttle %+d\ntime %s   %d fps" % [
@@ -50,7 +101,7 @@ func _process(_delta: float) -> void:
 		Fmt.speed(p.velocity.length()), p.throttle,
 		Fmt.time_scale(Universe.time_scale), Engine.get_frames_per_second(),
 	]
-	if _markers_visible:
+	if marker_layer.visible:
 		_update_markers()
 
 

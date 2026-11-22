@@ -12,6 +12,9 @@ var _altitude := -1.0
 var _goto := ""
 var _yaw := 0.0
 var _menu := false
+var _fall := -1.0
+var _tess := -1.0
+var _leave := false
 
 
 func _ready() -> void:
@@ -27,6 +30,9 @@ func _ready() -> void:
 			"goto": _goto = kv[1]
 			"yaw": _yaw = deg_to_rad(float(kv[1]))
 			"menu": _menu = true
+			"fall": _fall = float(kv[1])
+			"tesseract": _tess = float(kv[1])
+			"leave": _leave = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	var view := get_parent() as SpaceView
 	if _goto != "":
@@ -44,6 +50,16 @@ func _process(_delta: float) -> void:
 		var target: Variant = sv.render_position_of(look_at_body)
 		if target != null:
 			sv.player.look_at(target, Vector3.UP)
+	if _count == 4 and _fall >= 0.0:
+		# Start falling from where we are, already `fall` seconds in.
+		var hole_id: String = sv.player.nearest_body_id
+		var c := Universe.catalog.body_position(hole_id, Universe.sim_time)
+		sv.plunge.begin_fall(hole_id, sv.player.pos.sub(c).normalized().to_vector3())
+		sv.plunge.t = _fall
+	if _count == 4 and _tess >= 0.0:
+		sv.plunge.debug_jump(Plunge.Phase.TESSERACT, _tess)
+	if _count == 4 and _leave:
+		sv.plunge.debug_jump(Plunge.Phase.LEAVING, Plunge.LEAVE_SECONDS - 0.1)
 	if _menu and _count == 4:
 		(sv.get_node("Hud/TravelMenu") as TravelMenu).open()
 	if _count >= frames:

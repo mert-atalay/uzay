@@ -27,6 +27,10 @@ astronaut through the real Solar System, travel to nearby stars, and fall into S
 | Toggle markers | H | Y |
 | Free the mouse | Esc | |
 
+**The black hole:** Tab → Sagittarius A*. It pulls you in as you get close. Cross the event horizon
+and there is no way back: you fall for about a minute, then the tesseract opens. Press Enter there
+to let go.
+
 Your top speed depends on how far you are from the nearest surface: slow near a planet, very
 fast in empty space.
 

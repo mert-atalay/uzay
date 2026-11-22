@@ -20,8 +20,10 @@ uniform vec3 disk_normal = vec3(0.0, 1.0, 0.0);
 uniform float disk_inner = 3.0; // innermost stable circular orbit
 uniform float disk_outer = 16.0;
 uniform float disk_energy = 5.0;
+// 0 outside the horizon, rising to 1 during the fall: the outside universe blue-shifts and brightens.
+uniform float fall = 0.0;
 
-const int MAX_STEPS = 260;
+const int MAX_STEPS = 320;
 
 varying vec3 pos_obj;
 varying vec3 cam_obj;
@@ -64,7 +66,7 @@ vec3 blackbody(float t) {
 
 vec3 sky(vec3 dir) {
 	vec3 c = textureLod(panorama, sky_uv(normalize(sky_from_world * dir)), 0.0).rgb;
-	return pow(c, vec3(1.35)) * sky_brightness;
+	return pow(c, vec3(1.35)) * sky_brightness * mix(vec3(1.0), vec3(3.0, 4.5, 7.0), fall);
 }
 
 // Emission where a ray crosses the disk plane at point p (in rs units), travelling along v.
@@ -98,6 +100,25 @@ vec4 disk_sample(vec3 p, vec3 v, vec3 n) {
 	return vec4(col * disk_energy, alpha);
 }
 
+// Light and matter falling in alongside you, seen as streaks racing out of the point you are
+// falling towards. `view` is the looking direction, `inward` points at the singularity.
+vec3 infall_streaks(vec3 view, vec3 inward) {
+	float c = dot(view, inward);
+	vec3 side = abs(inward.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+	vec3 e1 = normalize(cross(inward, side));
+	vec3 e2 = cross(inward, e1);
+	float az = atan(dot(view, e2), dot(view, e1));
+	// Distance from the vanishing point, stretched so streaks speed up as they pass you.
+	float radial = log(max(1.0 - c, 1e-4));
+	float speed = 0.5 + 2.2 * fall;
+	float lines = noise(vec2(az * 28.0, 3.0)) * noise(vec2(az * 9.0 + 4.0, radial * 1.6 - TIME * speed));
+	float fine = noise(vec2(az * 90.0, radial * 5.0 - TIME * speed * 1.7));
+	float v = smoothstep(0.34, 0.75, lines) + 0.5 * smoothstep(0.62, 0.9, fine);
+	// Nothing at the vanishing point itself: the dark ahead stays dark until the very end.
+	float mask = smoothstep(-9.0, -3.0, radial) * (0.25 + 0.75 * smoothstep(1.0, -0.6, c)) * smoothstep(-0.95, -0.35, c);
+	return mix(vec3(1.0, 0.72, 0.42), vec3(0.6, 0.8, 1.0), fall) * v * mask * (0.12 + 0.9 * fall * fall);
+}
+
 void fragment() {
 	vec3 n = normalize(disk_normal);
 	vec3 pos = cam_obj;
@@ -113,14 +134,18 @@ void fragment() {
 
 	vec3 color = vec3(0.0);
 	float alpha = 0.0;
-	bool captured = r_cam < 1.0;
+	// From inside the horizon rays are still traced: the ones aimed outward show the universe
+	// you left as a shrinking window overhead, the rest end at the singularity.
+	bool inside = r_cam < 1.0;
+	float capture_r = inside ? 0.05 : 1.0;
+	bool captured = false;
 	bool escaped = false;
 	vec3 hvec = cross(pos, vel);
 	float h2 = dot(hvec, hvec);
 
 	for (int i = 0; i < MAX_STEPS && !captured && !escaped; i++) {
 		float r = length(pos);
-		float dt = clamp(0.11 * (r - 0.85), 0.012, 4.0);
+		float dt = r < 1.0 ? clamp(0.1 * r, 0.004, 0.03) : clamp(0.11 * (r - 0.85), 0.012, 4.0);
 		// Leapfrog step of the photon equation of motion around a Schwarzschild mass.
 		vec3 acc = -1.5 * h2 * pos / pow(r, 5.0);
 		vec3 v_half = vel + acc * (0.5 * dt);
@@ -140,7 +165,7 @@ void fragment() {
 
 		pos = next;
 		vel = v_next;
-		if (rn < 1.0) {
+		if (rn < capture_r) {
 			captured = true;
 		} else if (rn > lens_radius && dot(pos, vel) > 0.0) {
 			escaped = true;
@@ -149,6 +174,10 @@ void fragment() {
 
 	if (!captured) {
 		color += (1.0 - alpha) * sky(vel);
+	}
+	color *= 1.0 + 2.0 * fall;
+	if (inside) {
+		color += infall_streaks(normalize(pos_obj - cam_obj), -normalize(cam_obj));
 	}
 	ALBEDO = color;
 }

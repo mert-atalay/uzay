@@ -22,6 +22,8 @@ var throttle: int = 0
 var nearest_altitude: float = INF
 var nearest_body_id: String = ""
 var nearest_is_black_hole: bool = false
+## True while something else is moving the astronaut (the fall into a black hole). You can still look.
+var controls_locked: bool = false
 
 @onready var camera: Camera3D = $Camera3D
 
@@ -72,6 +74,10 @@ func _process(delta: float) -> void:
 	)
 	if input.length() > 1.0:
 		input = input.normalized()
+
+	if controls_locked:
+		velocity = Vector3.ZERO
+		return
 
 	var top_speed := Flight.max_speed(nearest_altitude, throttle, nearest_is_black_hole)
 	if Input.is_action_pressed("boost"):

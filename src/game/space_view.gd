@@ -29,10 +29,16 @@ var _sky_basis := Basis(Vector3.RIGHT, deg_to_rad(60.2)) * Basis(Vector3.UP, deg
 
 @onready var player: Player = $Player
 @onready var sky: MeshInstance3D = $Sky
+@onready var plunge: Plunge = $Plunge
+@onready var tesseract: Tesseract = $Tesseract
+
+var _tesseract_origin := DVec3.new()
+var _shake_time := 0.0
 
 
 func _ready() -> void:
 	_setup_sky()
+	plunge.phase_changed.connect(_on_plunge_phase)
 	_build_system(player.system_id)
 	_place_player_near(start_body, start_altitude_m)
 	for arg in OS.get_cmdline_user_args():
@@ -115,7 +121,10 @@ func _place_player_near(body_id: String, altitude: float) -> void:
 	_frame_prev = center
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if plunge.phase == Plunge.Phase.TESSERACT or plunge.phase == Plunge.Phase.LEAVING:
+		_process_tesseract()
+		return
 	var t := Universe.sim_time
 	var centers := {}
 	var nearest_alt := INF
@@ -128,6 +137,8 @@ func _process(_delta: float) -> void:
 	# Travel along with the body we were near, before measuring anything.
 	if _frame_body != "" and centers.has(_frame_body):
 		player.pos = player.pos.add(centers[_frame_body].sub(_frame_prev))
+
+	_black_hole_gravity(centers, delta)
 
 	# Pass 2: surface collision, and which body is closest.
 	for id in bodies:
@@ -147,7 +158,8 @@ func _process(_delta: float) -> void:
 	player.nearest_is_black_hole = nearest_id != "" and Universe.catalog.bodies_by_id[nearest_id]["kind"] == "black-hole"
 
 	# Pass 3: fit everything into the camera's depth range around the player.
-	space = ScaledSpace.for_altitude(nearest_alt)
+	# Near a black hole the whole lens region (60 horizon radii) has to fit inside the far plane.
+	space = ScaledSpace.for_altitude(maxf(nearest_alt, 5.0e7) if player.nearest_is_black_hole else nearest_alt)
 	player.camera.near = space.near
 	player.camera.far = space.far
 	for id in bodies:
@@ -161,6 +173,63 @@ func _process(_delta: float) -> void:
 
 	_update_lighting(centers)
 	sky.global_transform = Transform3D(_sky_basis.scaled(Vector3.ONE * space.far * 0.95), Vector3.ZERO)
+
+
+## A black hole pulls you in. Outside the horizon it is a drift you can fight; once you cross,
+## Plunge takes over and there is no way back.
+func _black_hole_gravity(centers: Dictionary, delta: float) -> void:
+	var primary := Universe.catalog.primary_of(player.system_id)
+	if primary.is_empty() or primary["kind"] != "black-hole" or not centers.has(primary["id"]):
+		return
+	var center: DVec3 = centers[primary["id"]]
+	var rs: float = primary["radius_m"]
+	var m: ShaderMaterial = bodies[primary["id"]].get_meta("black_hole_material")
+	if plunge.phase == Plunge.Phase.FALLING:
+		var u := plunge.fall_progress()
+		player.pos = center.add(DVec3.from_vector3(plunge.direction).scaled(rs * PlungeMath.radius_fraction(u)))
+		m.set_shader_parameter("fall", u)
+		# The fall gets rougher and the view stretches as you go deeper.
+		_shake_time += delta
+		var k := 0.004 + 0.02 * u * u
+		player.camera.rotation = Vector3(sin(_shake_time * 23.0) + sin(_shake_time * 37.3), sin(_shake_time * 29.0) + sin(_shake_time * 41.7), sin(_shake_time * 17.0)) * k
+		player.camera.fov = lerpf(70.0, 108.0, u)
+		return
+	m.set_shader_parameter("fall", 0.0)
+	var rel := player.pos.sub(center)
+	var r := rel.length()
+	if r < rs:
+		plunge.begin_fall(primary["id"], rel.normalized().to_vector3())
+		return
+	player.pos = player.pos.add(rel.scaled(-PlungeMath.pull_speed(r, rs) * delta / r))
+
+
+func _on_plunge_phase(phase: Plunge.Phase) -> void:
+	player.controls_locked = phase == Plunge.Phase.FALLING
+	match phase:
+		Plunge.Phase.TESSERACT:
+			_tesseract_origin = player.pos.duplicate()
+			for id in bodies:
+				bodies[id].visible = false
+			sky.visible = false
+			tesseract.visible = true
+			player.camera.rotation = Vector3.ZERO
+			player.camera.fov = 78.0
+			player.velocity = Vector3.ZERO
+		Plunge.Phase.NONE:
+			# Let go: the tesseract closes and drops you back into ordinary space.
+			tesseract.visible = false
+			sky.visible = true
+			player.camera.fov = 70.0
+			travel_to_body(Plunge.EXIT_BODY)
+
+
+func _process_tesseract() -> void:
+	var p := player.pos.sub(_tesseract_origin).to_vector3()
+	tesseract.update(p)
+	player.nearest_altitude = 14.0 # metres: a gentle drifting pace
+	player.nearest_is_black_hole = false
+	player.camera.near = 0.05
+	player.camera.far = 600.0
 
 
 func _choose_frame_body(nearest_id: String, nearest_alt: float, centers: Dictionary) -> void:
