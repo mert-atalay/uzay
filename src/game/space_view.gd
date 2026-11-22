@@ -31,11 +31,20 @@ var _sky_basis := Basis(Vector3.RIGHT, deg_to_rad(60.2)) * Basis(Vector3.UP, deg
 @onready var sky: MeshInstance3D = $Sky
 @onready var plunge: Plunge = $Plunge
 @onready var tesseract: Tesseract = $Tesseract
+@onready var terrain: TerrainPatch = $Terrain
 
 ## Light falling on the player right now (world axes), for the astronaut overlay.
 var star_direction := Vector3.UP
 var star_color := Color.WHITE
 var star_energy := 2.0
+
+## What is under the player this frame, when close to a body with solid ground (else empty):
+## body, center, fixed_up (planet-fixed, 64-bit), tilt, angle, sea_altitude, height.
+var ground: Dictionary = {}
+## 0..1: how hard the air is burning around you during a fast descent (the HUD draws it).
+var entry_heat := 0.0
+var _body_light: Dictionary = {} # id -> [direction to the star, energy]
+var _prev_time := 0.0
 
 var _tesseract_origin := DVec3.new()
 var _shake_time := 0.0
@@ -70,6 +79,8 @@ func _build_system(system_id: String) -> void:
 	bodies.clear()
 	far_systems.clear()
 	_lit_materials.clear()
+	ground = {}
+	_body_light.clear()
 	_frame_body = ""
 	player.system_id = system_id
 	for b in Universe.catalog.bodies_in_system(system_id):
@@ -143,6 +154,9 @@ func _process(delta: float) -> void:
 	if _frame_body != "" and centers.has(_frame_body):
 		player.pos = player.pos.add(centers[_frame_body].sub(_frame_prev))
 
+	_carry_with_spin(centers, t)
+	_prev_time = t
+
 	_black_hole_gravity(centers, delta)
 
 	# Pass 2: surface collision, and which body is closest.
@@ -157,14 +171,18 @@ func _process(delta: float) -> void:
 			nearest_alt = alt
 			nearest_id = id
 
-	_choose_frame_body(nearest_id, nearest_alt, centers)
+	var sea_alt := nearest_alt
+	nearest_alt = _measure_ground(nearest_id, centers, t, nearest_alt)
+
+	_choose_frame_body(nearest_id, sea_alt, centers)
 	player.nearest_altitude = nearest_alt
 	player.nearest_body_id = nearest_id
 	player.nearest_is_black_hole = nearest_id != "" and Universe.catalog.bodies_by_id[nearest_id]["kind"] == "black-hole"
 
 	# Pass 3: fit everything into the camera's depth range around the player.
 	# Near a black hole the whole lens region (60 horizon radii) has to fit inside the far plane.
-	space = ScaledSpace.for_altitude(maxf(nearest_alt, 5.0e7) if player.nearest_is_black_hole else nearest_alt)
+	# Standing on the ground the near plane stays at 20 cm, which still reaches past the horizon.
+	space = ScaledSpace.for_altitude(maxf(nearest_alt, 5.0e7) if player.nearest_is_black_hole else maxf(nearest_alt, 10.0))
 	player.camera.near = space.near
 	player.camera.far = space.far
 	for id in bodies:
@@ -173,11 +191,100 @@ func _process(delta: float) -> void:
 		var d := rel.length()
 		var extent: float = b["radius_m"] * (BodyVisuals.LENS_RADIUS if b["kind"] == "black-hole" else 3.0)
 		# The body you're at is drawn uncompressed (exact surface) whenever it fits the far plane.
-		var s := 1.0 if (id == nearest_id and d + extent < space.far * 0.9) else space.scale_factor(d)
-		_place(bodies[id], b, rel.scaled(s).to_vector3(), b["radius_m"] * s, t)
+		# Close in, everything up to the horizon is inside the far plane, so that is exact too.
+		var s := 1.0 if (id == nearest_id and (d + extent < space.far * 0.9 or sea_alt < 0.5 * b["radius_m"])) else space.scale_factor(d)
+		# With real ground drawn on top, sink the smooth sphere a little so the two never fight.
+		var sink := 0.9997 if (not ground.is_empty() and id == nearest_id) else 1.0
+		_place(bodies[id], b, rel.scaled(s).to_vector3(), b["radius_m"] * s * sink, t)
 
 	_update_lighting(centers)
+	_update_terrain()
 	sky.global_transform = Transform3D(_sky_basis.scaled(Vector3.ONE * space.far * 0.95), Vector3.ZERO)
+
+
+## Close to a spinning body you turn with it, as if its air and gravity had hold of you.
+## Otherwise the ground would slide past at hundreds of metres per second.
+func _carry_with_spin(centers: Dictionary, t: float) -> void:
+	if ground.is_empty() or not centers.has(ground["id"]) or ground["id"] != _frame_body:
+		return
+	var b: Dictionary = Universe.catalog.bodies_by_id[ground["id"]]
+	var radius: float = b["radius_m"]
+	var w := 1.0 - smoothstep(0.01 * radius, TerrainPatch.APPEAR_ALTITUDE * radius, ground["sea_altitude"])
+	var tilt := BodyFrame.tilt_of(b)
+	var before := BodyFrame.spin_angle(b, _prev_time)
+	var turn := (BodyFrame.spin_angle(b, t) - before) * w
+	if turn == 0.0:
+		return
+	var center: DVec3 = centers[ground["id"]]
+	var fixed := BodyFrame.to_fixed(player.pos.sub(center), tilt, before)
+	player.pos = center.add(BodyFrame.to_world(fixed, tilt, before + turn))
+	player.transform.basis = (Basis(BodyFrame.axis(tilt), turn) * player.transform.basis).orthonormalized()
+
+
+## If the nearest body has solid ground and we are close, find the ground height below the
+## player, keep them above it, and return the altitude above the ground. Otherwise returns
+## `sea_altitude` (height above the smooth base radius) unchanged.
+func _measure_ground(id: String, centers: Dictionary, t: float, sea_altitude: float) -> float:
+	ground = {}
+	player.on_ground = false
+	player.has_ground = false
+	entry_heat = move_toward(entry_heat, 0.0, 0.02)
+	if id == "":
+		return sea_altitude
+	var b: Dictionary = Universe.catalog.bodies_by_id[id]
+	var field := terrain.field_for(b)
+	var radius: float = b["radius_m"]
+	if field == null or sea_altitude > TerrainPatch.APPEAR_ALTITUDE * radius:
+		return sea_altitude
+	var center: DVec3 = centers[id]
+	var tilt := BodyFrame.tilt_of(b)
+	var angle := BodyFrame.spin_angle(b, t)
+	var fixed_up := BodyFrame.to_fixed(player.pos.sub(center), tilt, angle).normalized()
+	var height := field.height(fixed_up) * TerrainPatch.amplitude(sea_altitude, radius)
+	player.on_ground = false
+	if sea_altitude < height + Player.SURFACE_CLEARANCE + 0.02:
+		player.resolve_surface(center, radius + height)
+		player.on_ground = true
+		sea_altitude = center.sub(player.pos).length() - radius
+	player.has_ground = true
+	player.ground_up = player.pos.sub(center).normalized().to_vector3()
+	player.gravity = 9.81 * float(b.get("surface_gravity_g", 1.0))
+	_update_entry_heat(b, sea_altitude)
+	ground = {"id": id, "body": b, "center": center, "fixed_up": fixed_up, "tilt": tilt, "angle": angle,
+		"sea_altitude": sea_altitude, "height": height}
+	return sea_altitude - height
+
+
+## Diving into air fast heats it: strongest where the air is thick enough and you are still quick.
+func _update_entry_heat(b: Dictionary, sea_altitude: float) -> void:
+	var target := 0.0
+	var atmo: Variant = b["atmosphere"]
+	if atmo != null and atmo["density"] >= 0.1 and plunge.phase == Plunge.Phase.NONE:
+		var scale_height := 8500.0 * float(atmo["heightRatio"]) / 0.075
+		var air := float(atmo["density"]) * exp(-maxf(sea_altitude, 0.0) / scale_height)
+		var speed := player.velocity.length()
+		target = clampf(air * speed * speed / 1.5e7, 0.0, 1.0)
+	entry_heat = lerpf(entry_heat, target, 0.08)
+	if plunge.phase == Plunge.Phase.NONE:
+		_shake_time += 0.016
+		player.camera.rotation = Vector3(sin(_shake_time * 31.0) + sin(_shake_time * 47.3), sin(_shake_time * 37.0) + sin(_shake_time * 53.1), 0.0) * 0.006 * entry_heat
+
+
+func _update_terrain() -> void:
+	if ground.is_empty():
+		terrain.hide_patch()
+		return
+	var b: Dictionary = ground["body"]
+	var center: DVec3 = ground["center"]
+	var rel := center.sub(player.pos) # camera → body centre
+	var d := rel.length()
+	var radius: float = b["radius_m"]
+	var tilt: float = ground["tilt"]
+	var angle: float = ground["angle"]
+	var light: Array = _body_light.get(ground["id"], [Vector3.UP, 1.0])
+	terrain.place(b, ground["fixed_up"], func(v: DVec3) -> DVec3: return BodyFrame.to_world(v, tilt, angle),
+		rel.scaled(1.0 - radius / d).to_vector3(), ground["sea_altitude"] - ground["height"], ground["sea_altitude"],
+		light[0], star_color, light[1])
 
 
 ## A black hole pulls you in. Outside the horizon it is a drift you can fight; once you cross,
@@ -216,6 +323,7 @@ func _on_plunge_phase(phase: Plunge.Phase) -> void:
 			for id in bodies:
 				bodies[id].visible = false
 			sky.visible = false
+			terrain.hide_patch()
 			tesseract.visible = true
 			player.camera.rotation = Vector3.ZERO
 			player.camera.fov = 78.0
@@ -283,6 +391,7 @@ func _update_lighting(centers: Dictionary) -> void:
 		var energy := clampf(1.5 * pow(au / maxf(d, 1.0), 0.3), 0.35, 2.4)
 		if is_hole:
 			energy = 0.9
+		_body_light[id] = [to_star, energy]
 		for m in mats:
 			m.set_shader_parameter("sun_dir_world", to_star)
 			m.set_shader_parameter("sun_color", color)

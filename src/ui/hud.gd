@@ -15,6 +15,7 @@ var _markers_visible := true
 @onready var music: AudioStreamPlayer = $Music
 @onready var notice: Label = $Notice
 @onready var fade: ColorRect = $Fade
+@onready var heat: ColorRect = $Heat
 
 ## The soundtrack's peak, timed to land as the tesseract opens.
 const MUSIC_PEAK_SECONDS := 210.0
@@ -68,6 +69,8 @@ func _on_plunge_phase(phase: Plunge.Phase) -> void:
 func _update_plunge(p: Player) -> void:
 	var plunge := space_view.plunge
 	fade.color.a = plunge.white
+	heat.visible = space_view.entry_heat > 0.01
+	(heat.material as ShaderMaterial).set_shader_parameter("heat", space_view.entry_heat)
 	var in_space := plunge.phase == Plunge.Phase.NONE
 	info.visible = in_space
 	help.visible = in_space

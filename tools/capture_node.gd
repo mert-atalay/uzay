@@ -12,6 +12,9 @@ var _altitude := -1.0
 var _goto := ""
 var _yaw := 0.0
 var _menu := false
+var _pitch := 0.0
+var _heat := -1.0
+var _walk := false
 var _fall := -1.0
 var _tess := -1.0
 var _leave := false
@@ -30,6 +33,9 @@ func _ready() -> void:
 			"goto": _goto = kv[1]
 			"yaw": _yaw = deg_to_rad(float(kv[1]))
 			"menu": _menu = true
+			"pitch": _pitch = deg_to_rad(float(kv[1]))
+			"heat": _heat = float(kv[1])
+			"walk": _walk = true
 			"fall": _fall = float(kv[1])
 			"tesseract": _tess = float(kv[1])
 			"leave": _leave = true
@@ -41,6 +47,8 @@ func _ready() -> void:
 		view._place_player_near(_goto if _goto != "" else view.start_body, _altitude)
 	if _yaw != 0.0:
 		view.player.rotate_object_local(Vector3.UP, _yaw)
+	if _pitch != 0.0:
+		view.player.rotate_object_local(Vector3.RIGHT, _pitch)
 
 
 func _process(_delta: float) -> void:
@@ -60,6 +68,12 @@ func _process(_delta: float) -> void:
 		sv.plunge.debug_jump(Plunge.Phase.TESSERACT, _tess)
 	if _count == 4 and _leave:
 		sv.plunge.debug_jump(Plunge.Phase.LEAVING, Plunge.LEAVE_SECONDS - 0.1)
+	if _heat >= 0.0:
+		sv.entry_heat = _heat
+	if _walk and _count > 4:
+		# Walk forward: press the key for the rest of the run.
+		Input.action_press("move_forward")
+		print("mode=%d on_ground=%s alt=%.2f speed=%.2f" % [sv.player.mode, sv.player.on_ground, sv.player.nearest_altitude, sv.player.velocity.length()])
 	if _menu and _count == 4:
 		(sv.get_node("Hud/TravelMenu") as TravelMenu).open()
 	if _count >= frames:

@@ -33,6 +33,10 @@ astronaut through the real Solar System, travel to nearby stars, and fall into S
 and there is no way back: you fall for about a minute, then the tesseract opens. Press Enter there
 to let go.
 
+**Landing:** fly down to any rocky planet or moon. Dive fast through air and it burns around you.
+Touch the ground and you are on foot: W A S D walk, Shift runs, Space jumps (try the Moon). Hold
+Space to fire the jetpack and fly again.
+
 Your top speed depends on how far you are from the nearest surface: slow near a planet, very
 fast in empty space.
 

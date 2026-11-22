@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=14 format=3]
 
 [ext_resource type="Script" path="res://src/game/space_view.gd" id="1"]
 [ext_resource type="Script" path="res://src/game/player.gd" id="2"]
@@ -7,6 +7,12 @@
 [ext_resource type="Script" path="res://src/game/plunge.gd" id="5"]
 [ext_resource type="Script" path="res://src/game/tesseract.gd" id="6"]
 [ext_resource type="Script" path="res://src/game/astronaut_view.gd" id="7"]
+[ext_resource type="Script" path="res://src/game/terrain_patch.gd" id="8"]
+
+[ext_resource type="Shader" path="res://shaders/entry_heat.gdshader" id="9"]
+
+[sub_resource type="ShaderMaterial" id="heat_mat"]
+shader = ExtResource("9")
 
 [sub_resource type="Environment" id="env"]
 background_mode = 1
@@ -43,6 +49,9 @@ script = ExtResource("5")
 
 [node name="Tesseract" type="Node3D" parent="."]
 script = ExtResource("6")
+
+[node name="Terrain" type="MeshInstance3D" parent="."]
+script = ExtResource("8")
 
 [node name="Player" type="Node3D" parent="."]
 script = ExtResource("2")
@@ -82,6 +91,14 @@ offset_right = 1200.0
 offset_bottom = -16.0
 label_settings = SubResource("help_font")
 text = "B black hole · N Earth · Tab travel menu · WASD move · Space/Ctrl up/down · Q/E roll · mouse look · Shift boost · scroll or [ ] throttle · T time speed · V view · H markers · M music · Esc free mouse"
+
+[node name="Heat" type="ColorRect" parent="Hud"]
+visible = false
+material = SubResource("heat_mat")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
 
 [node name="Notice" type="Label" parent="Hud"]
 anchors_preset = 5

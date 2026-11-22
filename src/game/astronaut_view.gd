@@ -104,6 +104,19 @@ func _process(delta: float) -> void:
 	for i in _arms.size():
 		var side := -1.0 if i == 0 else 1.0
 		_arms[i].rotation = Vector3(0.25 + 0.3 * _thrust * -push.z + sin(_time * 0.8 + i) * 0.06 + falling * sin(_time * 2.0 + i * 2.0) * 0.8, 0.0, side * (0.28 + 0.1 * sin(_time * 0.6 + i * 1.7) + falling * 0.9))
+	if player.mode == Player.Mode.WALK:
+		# On foot: stand straight and swing arms and legs with each stride.
+		var swing := sin(player.stride * 2.6) * clampf(player.velocity.length() / 4.0, 0.0, 1.2) * 0.55
+		_body.rotation = Vector3(0.0, 0.0, 0.0)
+		_body.position = CAMERA_OFFSET + Vector3(0.0, absf(sin(player.stride * 2.6)) * 0.03, 0.0)
+		for i in _arms.size():
+			_arms[i].rotation = Vector3((swing if i == 0 else -swing) * 0.8, 0.0, (-1.0 if i == 0 else 1.0) * 0.12)
+		for i in _legs.size():
+			_legs[i].rotation = Vector3(-swing if i == 0 else swing, 0.0, 0.0)
+		_flame_material.emission_energy_multiplier = 0.0
+		for f in _flames:
+			f.scale = Vector3(1.0, 0.01, 1.0)
+		return
 	for i in _legs.size():
 		_legs[i].rotation = Vector3(0.12 + 0.35 * _thrust * maxf(-push.z, 0.0) + sin(_time * 0.7 + i * 2.1) * 0.07 + falling * sin(_time * 1.7 + i * 3.0) * 0.5, 0.0, (-1.0 if i == 0 else 1.0) * 0.05)
 	_flame_material.emission_energy_multiplier = 0.3 + 9.0 * _thrust
