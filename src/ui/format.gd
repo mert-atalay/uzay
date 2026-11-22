@@ -49,3 +49,14 @@ static func _group(v: float) -> String:
 		if left > 0 and left % 3 == 0:
 			out += ","
 	return out
+
+
+## A span of time in the largest sensible unit: "1.02 hours", "3.4 days", "12 years".
+static func duration(seconds: float) -> String:
+	var hours := seconds / 3600.0
+	if hours < 48.0:
+		return "%.2f hours" % hours
+	var days := hours / 24.0
+	if days < 730.0:
+		return "%.1f days" % days
+	return "%s years" % String.num(days / 365.25, 1)

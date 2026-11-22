@@ -30,6 +30,7 @@ astronaut through the real Solar System, travel to nearby stars, and fall into S
 | Toggle markers | H | Y |
 | Free the mouse | Esc | |
 | Fullscreen / window | F11 | |
+| Screenshot (saved in a `screenshots` folder next to the game) | F12 | Left stick click |
 
 The game starts fullscreen. In the travel menu, move with the D-pad or arrows, A / Enter picks a
 destination, B / Esc closes. The bottom-left hint line names the controller the game has found.
@@ -52,3 +53,9 @@ true-scale rendering, and a first flyable scene with placeholder visuals. Next: 
 (real star catalogue, astronaut, auto-exposure), then the black hole.
 
 The original AI Studio prototype is kept in `prototype-web/` for reference.
+
+## Sky data
+
+The sky is real: the Milky Way panorama comes from [Stellarium](https://github.com/Stellarium/stellarium)
+(GPL) and the stars from the [HYG database](https://github.com/astronexus/HYG-Database) (CC BY-SA).
+`tools/bake_sky.py` turns them into the game's files.

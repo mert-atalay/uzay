@@ -14,12 +14,13 @@ render_mode unshaded, cull_front, fog_disabled;
 
 uniform sampler2D panorama : source_color, filter_linear, repeat_enable;
 uniform float sky_brightness = 1.0;
+uniform float sky_core = 1.0;
 uniform mat3 sky_from_world = mat3(1.0);
 uniform float lens_radius = 60.0;
 uniform vec3 disk_normal = vec3(0.0, 1.0, 0.0);
 uniform float disk_inner = 3.0; // innermost stable circular orbit
 uniform float disk_outer = 16.0;
-uniform float disk_energy = 5.0;
+uniform float disk_energy = 4.0;
 // 0 outside the horizon, rising to 1 during the fall: the outside universe blue-shifts and brightens.
 uniform float fall = 0.0;
 
@@ -65,8 +66,8 @@ vec3 blackbody(float t) {
 }
 
 vec3 sky(vec3 dir) {
-	vec3 c = textureLod(panorama, sky_uv(normalize(sky_from_world * dir)), 0.0).rgb;
-	return pow(c, vec3(1.35)) * sky_brightness * mix(vec3(1.0), vec3(3.0, 4.5, 7.0), fall);
+	vec3 c = sky_color(panorama, normalize(sky_from_world * dir), sky_core);
+	return c * sky_brightness * mix(vec3(1.0), vec3(3.0, 4.5, 7.0), fall);
 }
 
 // Emission where a ray crosses the disk plane at point p (in rs units), travelling along v.
@@ -90,13 +91,18 @@ vec4 disk_sample(vec3 p, vec3 v, vec3 n) {
 	float ang = atan(dot(p, e2), dot(p, e1));
 	float omega = 2.2 * pow(r, -1.5);
 	float a = ang + TIME * omega;
-	float streaks = fbm(vec2(r * 2.6, a * 3.0 + r * 0.8)) * 0.65 + fbm(vec2(r * 9.0, a * 14.0)) * 0.35;
-	float lanes = smoothstep(0.25, 0.75, streaks);
+	// Noise wrapped around the circle (no seam where the angle wraps), sheared into spirals.
+	float sp = a + r * 0.27;
+	vec3 ring = vec3(cos(sp), sin(sp), 0.0);
+	float streaks = sky_fbm(vec3(ring.xy * 3.0, r * 2.6)) * 0.6 + sky_fbm(vec3(ring.xy * 13.0, r * 9.0)) * 0.4;
+	float fine = sky_noise(vec3(ring.xy * 5.0, r * 34.0));
+	float lanes = smoothstep(0.25, 0.8, streaks) * (0.72 + 0.28 * fine);
 
 	float temp = pow(disk_inner / r, 0.75);
-	float edge = smoothstep(disk_inner, disk_inner * 1.18, r) * smoothstep(disk_outer, disk_outer * 0.55, r);
-	vec3 col = blackbody(temp * shift * 1.25) * pow(shift, 3.5) * temp * temp * (0.25 + 1.1 * lanes);
-	float alpha = edge * (0.55 + 0.45 * lanes);
+	float edge = smoothstep(disk_inner, disk_inner * 1.12, r) * smoothstep(disk_outer, disk_outer * 0.45, r);
+	vec3 col = blackbody(temp * shift * 1.25) * pow(shift, 3.2) * temp * temp * (0.2 + 1.15 * lanes);
+	// Thin gas: you see through the gaps between streaks, and more so towards the outer edge.
+	float alpha = edge * (0.3 + 0.7 * lanes) * mix(1.0, 0.55, smoothstep(disk_inner, disk_outer, r));
 	return vec4(col * disk_energy, alpha);
 }
 

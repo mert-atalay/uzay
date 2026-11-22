@@ -55,6 +55,13 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	_count += 1
+	if _count == 2 and OS.get_environment("UZAY_RED") != "":
+		(get_parent().get_node("WorldEnvironment") as WorldEnvironment).environment.background_color = Color(0.5, 0.0, 0.0)
+	if _count == 2 and OS.get_environment("UZAY_HIDE") != "":
+		for name in OS.get_environment("UZAY_HIDE").split(","):
+			get_parent().get_node(name).visible = false
+	if _count == 8 and OS.get_environment("UZAY_DUMP") != "":
+		_dump(get_parent(), 0)
 	var sv := get_parent() as SpaceView
 	if look_at_body != "" and _count >= 3:
 		var target: Variant = sv.render_position_of(look_at_body)
@@ -86,3 +93,15 @@ func _process(_delta: float) -> void:
 		get_viewport().get_texture().get_image().save_png(out_path)
 		print("saved ", out_path)
 		get_tree().quit()
+
+
+func _dump(n: Node, depth: int) -> void:
+	if n is GeometryInstance3D and (n as GeometryInstance3D).is_visible_in_tree():
+		var g := n as GeometryInstance3D
+		print("VIS ", g.get_path(), " pos=", g.global_position, " scale=", g.global_basis.get_scale())
+	if n is CanvasItem and (n as CanvasItem).is_visible_in_tree():
+		print("CAN ", n.get_path(), " ", n.get_class(), " ", (n as Control).get_global_rect() if n is Control else "")
+	if n is Light3D or n is Camera3D or n is WorldEnvironment:
+		print("ENV ", n.get_path(), " ", n.get_class())
+	for c in n.get_children():
+		_dump(c, depth + 1)

@@ -11,6 +11,7 @@ const LENS_RADIUS := 60.0
 
 const PLANET_SHADER := preload("res://shaders/planet.gdshader")
 const STAR_SHADER := preload("res://shaders/star.gdshader")
+const STAR_GLOW_SHADER := preload("res://shaders/star_glow.gdshader")
 const ATMO_SHADER := preload("res://shaders/atmosphere.gdshader")
 const RING_SHADER := preload("res://shaders/ring.gdshader")
 const BLACK_HOLE_SHADER := preload("res://shaders/black_hole.gdshader")
@@ -57,8 +58,20 @@ static func build(b: Dictionary, materials: Array) -> MeshInstance3D:
 			var m := ShaderMaterial.new()
 			m.shader = STAR_SHADER
 			m.set_shader_parameter("surface_tex", texture("sun.jpg"))
-			m.set_shader_parameter("tint", UniverseCatalog.color_of(b["star_color"], Color(1, 0.95, 0.85)))
+			var tint := UniverseCatalog.color_of(b["star_color"], Color(1, 0.95, 0.85))
+			m.set_shader_parameter("tint", tint)
 			mi.material_override = m
+			# Corona and glare: a square that always faces the camera.
+			var glow := MeshInstance3D.new()
+			glow.name = "Glow"
+			glow.mesh = QuadMesh.new()
+			glow.custom_aabb = AABB(Vector3.ONE * -1.0e6, Vector3.ONE * 2.0e6)
+			glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var gm := ShaderMaterial.new()
+			gm.shader = STAR_GLOW_SHADER
+			gm.set_shader_parameter("tint", tint)
+			glow.material_override = gm
+			mi.add_child(glow)
 		"black-hole":
 			var lens := SphereMesh.new()
 			lens.radius = LENS_RADIUS

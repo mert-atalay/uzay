@@ -18,3 +18,10 @@ func test_rock_placement_is_repeatable_and_spread_out() -> void:
 		total += r
 	check_near(total / 2000.0, 0.5, 0.05, "and average out to a half")
 	check(SurfaceRocks._hash(12, -7, 3) == SurfaceRocks._hash(12, -7, 3), "same cell, same rock")
+
+
+func test_time_runs_slower_near_the_horizon() -> void:
+	var rs := 1.0e10
+	check_near(Hud.time_dilation(rs * 1.0e6, rs), 1.0, 1.0e-5, "far away clocks agree")
+	check_rel(Hud.time_dilation(rs / 3.0, rs), 2.0, 1.0e-9, "at 4/3 of the horizon radius time runs at half speed")
+	check(Hud.time_dilation(rs * 0.001, rs) > 30.0, "close to the horizon an hour is more than a day")

@@ -36,6 +36,7 @@ func _ready() -> void:
 		music.volume_db = MUSIC_DB
 		music.play()
 	(space_view.get_node("Plunge") as Plunge).phase_changed.connect(_on_plunge_phase)
+	_setup_dread()
 
 
 const HELP_KEYS := "F12 screenshot · B black hole · N Earth · J warp to what you look at · Tab travel menu · WASD move · Space/Ctrl up/down · Q/E roll · mouse look · Shift boost · scroll or [ ] throttle · T time speed · V view · H markers · M music · F11 window · Esc free mouse"
@@ -56,6 +57,57 @@ func _input(event: InputEvent) -> void:
 
 
 var _using_pad := false
+var _vignette: ColorRect
+var _drone: AudioStreamPlayer
+## 0 far from the black hole, 1 at its horizon. Drives the darkening view and the drone.
+var _dread := 0.0
+
+const VIGNETTE_SHADER := "shader_type canvas_item;\nuniform float amount = 0.0;\nvoid fragment() {\n\tfloat r = length(UV * 2.0 - 1.0);\n\tCOLOR = vec4(0.0, 0.0, 0.0, smoothstep(0.55, 1.5, r) * amount);\n}\n"
+
+
+## The things that make the black hole feel wrong before you can say why: the edges of your
+## view closing in, and a drone so low you half feel it.
+func _setup_dread() -> void:
+	_vignette = ColorRect.new()
+	_vignette.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var shader := Shader.new()
+	shader.code = VIGNETTE_SHADER
+	var m := ShaderMaterial.new()
+	m.shader = shader
+	_vignette.material = m
+	add_child(_vignette)
+	move_child(_vignette, 0)
+	_drone = AudioStreamPlayer.new()
+	var stream := load("res://assets/music/black_hole_drone.ogg") as AudioStreamOggVorbis
+	if stream != null:
+		stream.loop = true
+		_drone.stream = stream
+		_drone.volume_db = -60.0
+		add_child(_drone)
+
+
+func _update_dread(p: Player, delta: float) -> void:
+	var target := 0.0
+	var plunge := space_view.plunge
+	if plunge.phase == Plunge.Phase.FALLING:
+		target = 1.0
+	elif plunge.phase == Plunge.Phase.NONE and p.nearest_is_black_hole:
+		var rs: float = Universe.catalog.body(p.nearest_body_id)["radius_m"]
+		target = clampf(1.0 - log(1.0 + maxf(p.nearest_altitude, 0.0) / rs) / log(40.0), 0.0, 1.0)
+	_dread = lerpf(_dread, target, 1.0 - exp(-1.5 * delta))
+	(_vignette.material as ShaderMaterial).set_shader_parameter("amount", 0.6 * _dread)
+	if _drone.stream != null:
+		if _dread > 0.01 and not _drone.playing and not music.stream_paused:
+			_drone.play()
+		elif (_dread <= 0.01 or music.stream_paused) and _drone.playing:
+			_drone.stop()
+		_drone.volume_db = lerpf(-34.0, -5.0, _dread)
+
+
+## How much slower your clock runs than one far away, hovering at `altitude` above the horizon.
+static func time_dilation(altitude: float, rs: float) -> float:
+	return 1.0 / sqrt(maxf(1.0 - rs / (rs + maxf(altitude, rs * 1.0e-6)), 1.0e-12))
 var _shot_note_until := 0.0
 
 
@@ -171,7 +223,7 @@ func _update_plunge(p: Player) -> void:
 				notice.modulate = Color(1.0, 0.92, 0.8, 0.5 + 0.3 * sin(Time.get_ticks_msec() * 0.003))
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	var p := space_view.player
 	_update_plunge(p)
 	var nearest := Universe.catalog.body(p.nearest_body_id)
@@ -182,6 +234,11 @@ func _process(_delta: float) -> void:
 		Fmt.speed(p.velocity.length()), p.throttle,
 		Fmt.time_scale(Universe.time_scale), Engine.get_frames_per_second(),
 	]
+	if p.nearest_is_black_hole and space_view.plunge.phase == Plunge.Phase.NONE:
+		var rs: float = nearest["radius_m"]
+		if p.nearest_altitude < rs * 40.0:
+			info.text += "\n1 hour here = %s on Earth" % Fmt.duration(3600.0 * time_dilation(p.nearest_altitude, rs))
+	_update_dread(p, delta)
 	if Time.get_ticks_msec() / 1000.0 < _shot_note_until:
 		info.text += "\n" + info_note
 	if marker_layer.visible:

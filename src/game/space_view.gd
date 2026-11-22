@@ -16,7 +16,7 @@ signal system_changed(system_id: String)
 ## behind at 30 km/s). The prototype called this the co-moving reference frame.
 const FRAME_RADII := 200.0
 const SKY_SHADER := preload("res://shaders/sky.gdshader")
-const SKY_BRIGHTNESS := 0.85
+const SKY_BRIGHTNESS := 1.0
 const WARP_SECONDS := 6.0
 const WARP_CROSS_SECONDS := 10.0
 
@@ -54,6 +54,8 @@ var _prev_time := 0.0
 
 var clouds: CloudLayer
 var rocks: SurfaceRocks
+var stars: StarPoints
+var _at_core := false
 var _tesseract_origin := DVec3.new()
 var _shake_time := 0.0
 
@@ -63,6 +65,9 @@ func _ready() -> void:
 	clouds = CloudLayer.new()
 	clouds.name = "Clouds"
 	add_child(clouds)
+	stars = StarPoints.new()
+	stars.name = "Stars"
+	add_child(stars)
 	rocks = SurfaceRocks.new()
 	rocks.name = "Rocks"
 	add_child(rocks)
@@ -76,7 +81,8 @@ func _ready() -> void:
 
 
 func _set_sky_dim(dim: float) -> void:
-	(sky.material_override as ShaderMaterial).set_shader_parameter("brightness", SKY_BRIGHTNESS * (1.0 - 0.97 * dim))
+	(sky.material_override as ShaderMaterial).set_shader_parameter("brightness", SKY_BRIGHTNESS * (1.0 - 0.985 * dim))
+	stars.set_brightness(1.0 - 0.985 * dim)
 
 
 func _setup_sky() -> void:
@@ -101,6 +107,10 @@ func _build_system(system_id: String) -> void:
 	_body_light.clear()
 	_frame_body = ""
 	player.system_id = system_id
+	# At the galactic centre the sky is a different place: no familiar constellations, a wall of stars.
+	var primary := Universe.catalog.primary_of(system_id)
+	_at_core = not primary.is_empty() and primary["kind"] == "black-hole"
+	(sky.material_override as ShaderMaterial).set_shader_parameter("core", 1.0 if _at_core else 0.0)
 	for b in Universe.catalog.bodies_in_system(system_id):
 		var mi := BodyVisuals.build(b, _lit_materials)
 		add_child(mi)
@@ -131,14 +141,17 @@ func _arrival_altitude(b: Dictionary) -> float:
 	if b["kind"] == "star":
 		return b["radius_m"] * 5.0
 	if b["kind"] == "black-hole":
-		return b["radius_m"] * 9.0
+		return b["radius_m"] * 24.0
 	return b["radius_m"] * 3.0
 
 
 ## Which side of a body you arrive on (unit vector from its centre).
 func _arrival_dir(b: Dictionary, center: DVec3) -> Vector3:
 	if b["parent"] == null:
-		# A star or the black hole: approach from slightly above its equator.
+		if b["kind"] == "black-hole":
+			# High enough above the disk to take in the whole thing, shadow and all.
+			return Vector3(0.6, 0.3, 0.74).normalized()
+		# A star: approach from slightly above its equator.
 		return Vector3(0.62, 0.17, 0.77).normalized()
 	# The day side, a little off-axis so the terminator shows.
 	var to_star := center.scaled(-1.0).normalized().to_vector3()
@@ -293,6 +306,8 @@ func _process(delta: float) -> void:
 	_update_lighting(centers)
 	_update_terrain()
 	sky.global_transform = Transform3D(_sky_basis.scaled(Vector3.ONE * space.far * 0.95), Vector3.ZERO)
+	stars.global_transform = Transform3D(_sky_basis.scaled(Vector3.ONE * space.far * 0.93), Vector3.ZERO)
+	stars.visible = sky.visible and not _at_core
 
 
 ## Close to a spinning body you turn with it, as if its air and gravity had hold of you.
@@ -386,7 +401,7 @@ func _update_terrain() -> void:
 	var up := rel.scaled(-1.0 / d).to_vector3()
 	if atmo != null and atmo["density"] >= 0.1:
 		var air := clampf(float(atmo["density"]), 0.0, 1.0) * exp(-maxf(ground["sea_altitude"], 0.0) / 12000.0)
-		_set_sky_dim(air * smoothstep(-0.1, 0.1, up.dot(light[0])))
+		_set_sky_dim(minf(air * 4.0, 1.0) * smoothstep(-0.1, 0.1, up.dot(light[0])))
 	else:
 		_set_sky_dim(0.0)
 	rocks.place(b, terrain.field, ground["fixed_up"], radius + ground["sea_altitude"],
@@ -492,11 +507,15 @@ func _update_lighting(centers: Dictionary) -> void:
 	star_energy = 1.0 if is_hole else 1.5
 	for id in bodies:
 		var mi: MeshInstance3D = bodies[id]
+		var c: DVec3 = centers[id]
+		var d := c.length()
+		var glow := mi.get_node_or_null("Glow") as MeshInstance3D
+		if glow != null:
+			# A sun is a blaze from one AU and still the brightest star by far from forty.
+			(glow.material_override as ShaderMaterial).set_shader_parameter("glare_gain", clampf(pow(au / maxf(d, 1.0), 0.55), 0.12, 2.5))
 		var mats := _materials_of(mi)
 		if mats.is_empty():
 			continue
-		var c: DVec3 = centers[id]
-		var d := c.length()
 		var to_star := c.scaled(-1.0).normalized().to_vector3()
 		# Gentle falloff (not inverse-square) until auto-exposure lands: far worlds are dimmer but readable.
 		var energy := clampf(1.5 * pow(au / maxf(d, 1.0), 0.3), 0.35, 2.4)

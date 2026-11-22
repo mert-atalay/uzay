@@ -22,6 +22,10 @@ varying vec3 dir_world;
 
 void vertex() {
 	dir_world = VERTEX;
+	// Pin to the far plane. A sphere "almost at" the far plane loses the last bits of depth
+	// precision and gets clipped in a disc at the centre of the view.
+	POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));
+	POSITION.z = 0.0;
 }
 
 float noise_at(vec2 p, float period, vec2 drift) {
