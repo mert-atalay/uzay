@@ -45,7 +45,10 @@ func set_brightness(b: float) -> void:
 	_material.set_shader_parameter("pixel_scale", maxf(DisplayServer.window_get_size().y, 360.0) / 1080.0)
 
 
-## The patch of sky the Devourer has eaten (direction in the sky frame, radius in radians).
-func set_void(dir: Vector3, radius: float) -> void:
-	_material.set_shader_parameter("void_dir", dir)
-	_material.set_shader_parameter("void_radius", radius)
+## The Devourer's face, which covers the stars behind it (axes in the sky frame, half-angle
+## in radians, 0 = not here).
+func set_face(right: Vector3, up: Vector3, towards: Vector3, half: float) -> void:
+	_material.set_shader_parameter("face_right", right)
+	_material.set_shader_parameter("face_up", up)
+	_material.set_shader_parameter("face_towards", towards)
+	_material.set_shader_parameter("face_half", half)

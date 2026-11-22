@@ -8,8 +8,13 @@ render_mode unshaded, cull_front, depth_draw_never, fog_disabled;
 uniform sampler2D panorama : source_color, filter_linear, repeat_enable;
 uniform float brightness = 1.0;
 uniform float core = 0.0;
-uniform vec3 void_dir = vec3(0.0, 0.0, 1.0);
-uniform float void_radius = 0.0;
+// The Devourer's face: its axes in the sky frame, and half the angle it spans (0 = not here).
+uniform vec3 face_right = vec3(1.0, 0.0, 0.0);
+uniform vec3 face_up = vec3(0.0, 1.0, 0.0);
+uniform vec3 face_towards = vec3(0.0, 0.0, 1.0);
+uniform float face_half = 0.0;
+// How much of its own light survives daylight (the stars do not, it does).
+uniform float face_gain = 1.0;
 
 varying vec3 dir_obj;
 
@@ -23,9 +28,7 @@ void vertex() {
 
 void fragment() {
 	vec3 d = normalize(dir_obj);
-	float edge;
-	float left = void_mask(d, void_dir, void_radius, edge);
-	// Where the sky has been eaten there is nothing, and the torn rim flickers faintly.
-	float crackle = pow(sky_noise(d * 90.0 + TIME * 0.4), 3.0) * (0.6 + 0.4 * sin(TIME * 2.3 + d.x * 40.0));
-	ALBEDO = (sky_color(panorama, d, core) * left + vec3(0.3, 0.2, 0.55) * edge * edge * crackle * 0.16) * brightness;
+	vec3 bend;
+	vec4 face = devourer(d, face_right, face_up, face_towards, face_half, bend);
+	ALBEDO = sky_color(panorama, normalize(d + bend), core) * face.a * brightness + face.rgb * face_gain;
 }

@@ -38,12 +38,12 @@ destination, B / Esc closes. The bottom-left hint line names the controller the 
 **The black hole:** press B to jump next to Sagittarius A*, then hold W. It pulls you in as you get close. Cross the event horizon
 and there is no way back: you fall for about a minute, then the tesseract opens.
 
-**The story (spoilers, the game itself never says any of this):** something is coming from beyond Pluto. It
-eats each world in turn, outermost first (Earth after 27 minutes of play), and the sky behind it. Earth
-Dispatch and your own thoughts tell you how close it is. Fly into it, or be on a world when it arrives, and
-it starts again. The only way to stop it is inside the black hole: after a while three windows open in the
-tesseract. Look at one to read it, then fly into it or press Enter / Start / X to reach through. Only one of
-them saves the world.
+**The story (spoilers, the game itself never says any of this):** a face wider than the Solar System is
+carved into the sky, and it is coming. It does not notice you. Worlds simply stop being there as it nears,
+outermost first (Earth after 27 minutes of play). Earth Dispatch and your own thoughts tell you how close
+it is, and you can see it from every world, even through a daylight sky. The only way to stop it is inside
+the black hole: after a while three windows open in the tesseract. Look at one to read it, then fly into it
+or press Enter / Start / X to reach through. Only one of them saves the world.
 
 **Landing:** fly down to any rocky planet or moon. Dive fast through air and it burns around you.
 Touch the ground and you are on foot: W A S D walk, Shift runs, Space jumps (try the Moon). Hold

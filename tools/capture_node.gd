@@ -22,8 +22,7 @@ var _leave := false
 var _fp := false
 var _story := -1.0
 var _ending := -1.0
-var _swallow := false
-var _near := -1.0
+var _intro := -1.0
 var _choose := -1
 
 
@@ -50,8 +49,7 @@ func _ready() -> void:
 			"fp": _fp = true
 			"story": _story = float(kv[1])
 			"ending": _ending = float(kv[1])
-			"swallow": _swallow = true
-			"near": _near = float(kv[1])
+			"intro": _intro = float(kv[1])
 			"choose": _choose = int(kv[1])
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	var view := get_parent() as SpaceView
@@ -82,16 +80,11 @@ func _process(_delta: float) -> void:
 	if _count == 8 and OS.get_environment("UZAY_DUMP") != "":
 		_dump(get_parent(), 0)
 	var sv := get_parent() as SpaceView
-	if _near >= 0.0 and _count == 3:
-		# Stand off the Devourer's head by `near` AU, ahead and to one side of it.
-		var h := sv.story.heading()
-		var side := h.cross(Vector3.UP).normalized()
-		sv.player.pos = sv.story.head().add(DVec3.from_vector3((h * 0.8 + side * 0.55 + Vector3.UP * 0.2).normalized()).scaled(_near * StoryMath.AU))
-		sv._frame_body = ""
 	if look_at_body == "devourer" and _count >= 4:
-		sv.player.look_at(sv.leviathan.global_position, Vector3.UP)
-	if look_at_body == "void" and _count >= 3:
-		sv.player.look_at(DVec3.from_vector3(StoryMath.START).sub(sv.player.pos).normalized().to_vector3() * 100.0, Vector3.UP)
+		sv.player.transform.basis = Basis.looking_at(sv.face_direction, sv.face_up)
+	if _intro >= 0.0 and _count == 3:
+		sv.begin_intro()
+		sv.intro_t = _intro
 	if _count == 4 and _ending >= 0.0:
 		sv.story.apply_choice(Story.Choice.THEN)
 		sv.travel_to_body("saturn")
@@ -99,9 +92,7 @@ func _process(_delta: float) -> void:
 		sv.ending.t = _ending
 	if _count == 7 and _choose >= 0:
 		sv.plunge.choose(_choose)
-	if _count == 4 and _swallow:
-		sv.story.be_swallowed()
-	if look_at_body != "" and look_at_body != "devourer" and look_at_body != "void" and _count >= 3:
+	if look_at_body != "" and look_at_body != "devourer" and _count >= 3:
 		var target: Variant = sv.render_position_of(look_at_body)
 		if target != null:
 			sv.player.look_at(target, Vector3.UP)

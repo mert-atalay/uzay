@@ -106,9 +106,6 @@ func _update_dread(p: Player, delta: float) -> void:
 	elif plunge.phase == Plunge.Phase.NONE and p.nearest_is_black_hole:
 		var rs: float = Universe.catalog.body(p.nearest_body_id)["radius_m"]
 		target = clampf(1.0 - log(1.0 + maxf(p.nearest_altitude, 0.0) / rs) / log(40.0), 0.0, 1.0)
-	# The Devourer does the same to you as the black hole, from half an AU away.
-	if plunge.phase == Plunge.Phase.NONE:
-		target = maxf(target, clampf(1.0 - space_view.leviathan_distance / (0.5 * StoryMath.AU), 0.0, 1.0))
 	_dread = lerpf(_dread, target, 1.0 - exp(-1.5 * delta))
 	(_vignette.material as ShaderMaterial).set_shader_parameter("amount", 0.6 * _dread)
 	if _drone.stream != null:
@@ -215,8 +212,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif space_view.plunge.can_choose() and (event.is_action_pressed("travel_menu") or event.is_action_pressed("warp_to_look") \
 			or (event is InputEventKey and event.pressed and event.keycode in [KEY_ENTER, KEY_KP_ENTER])):
 		space_view.plunge.choose(space_view.choice_focus)
-	elif space_view.ending.active or space_view.swallow_fade > 0.0:
-		pass # nothing is yours to do while the ending plays or the dark has you
+	elif space_view.ending.active or space_view.intro_t >= 0.0:
+		pass # nothing is yours to do while the opening or the ending plays
 	elif event.is_action_pressed("travel_menu") and space_view.plunge.phase == Plunge.Phase.NONE:
 		if travel_menu.visible:
 			travel_menu.close()
@@ -252,7 +249,7 @@ func _update_plunge(p: Player) -> void:
 	(warp.material as ShaderMaterial).set_shader_parameter("amount", space_view.warp_amount)
 	heat.visible = space_view.entry_heat > 0.01
 	(heat.material as ShaderMaterial).set_shader_parameter("heat", space_view.entry_heat)
-	var in_space := plunge.phase == Plunge.Phase.NONE and not space_view.ending.active and space_view.swallow_fade <= 0.0
+	var in_space := plunge.phase == Plunge.Phase.NONE and not space_view.ending.active and space_view.intro_t < 0.0
 	if space_view.is_warping():
 		notice.text = ""
 	info.visible = in_space
@@ -324,9 +321,9 @@ func _looked_at_target() -> String:
 func _update_markers() -> void:
 	var cam := space_view.player.camera
 	var seen := {}
-	if space_view.leviathan.visible and space_view.story.marker_shown():
-		var away := space_view.story.head().sub(space_view.player.pos).length()
-		_show_marker(cam, "_devourer", space_view.leviathan.global_position, "UNKNOWN  %s" % Fmt.distance(away), seen)
+	if space_view.face_half > 0.0 and space_view.story.marker_shown():
+		_show_marker(cam, "_devourer", space_view.face_direction * space_view.space.far * 0.5,
+			"UNKNOWN  %s" % Fmt.distance(space_view.face_range), seen)
 		if _markers.has("_devourer"):
 			(_markers["_devourer"] as Label).add_theme_color_override("font_color", Color(1.0, 0.55, 0.6, 0.85))
 	for id in space_view.bodies:
@@ -462,15 +459,14 @@ func _update_story(delta: float) -> void:
 	_sub_box.modulate.a = clampf(minf(_sub_t * 3.0, _sub_seconds - _sub_t), 0.0, 1.0) if _sub_t < _sub_seconds else 0.0
 
 	var ending := space_view.ending
-	_black.color.a = maxf(space_view.swallow_fade, ending.black)
-	if space_view._swallow_t >= 0.0:
-		var st: float = space_view._swallow_t
-		_title.text = ""
-		_title.modulate.a = 0.0
-		_title_sub.text = "It did not notice you." if st < 7.5 else "Again."
-		_title_sub.modulate.a = smoothstep(3.0, 4.5, st) * (1.0 - smoothstep(6.5, 7.4, st)) + smoothstep(7.6, 8.4, st) * (1.0 - smoothstep(9.8, 10.8, st))
-	else:
-		_title.text = "U Z A Y"
+	_black.color.a = ending.black
+	_title.text = "U Z A Y"
+	if ending.active or ending.title > 0.0:
 		_title_sub.text = "A thousand years ago, someone looked up."
 		_title.modulate.a = ending.title
 		_title_sub.modulate.a = ending.title
+	else:
+		# The opening: just the name, over Earth, before anyone speaks.
+		_title_sub.text = ""
+		_title.modulate.a = space_view.intro_title
+		_title_sub.modulate.a = 0.0

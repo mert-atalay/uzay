@@ -13,6 +13,14 @@ uniform float mie_g = 0.76;
 uniform vec3 sun_dir_world = vec3(1.0, 0.0, 0.0);
 uniform vec3 sun_color : source_color = vec3(1.0);
 uniform float sun_energy = 18.0;
+// The Devourer's face (world axes, half-angle in radians; 0 = not here). It shows through
+// daylight as a darkening of the sky itself.
+uniform vec3 face_right = vec3(1.0, 0.0, 0.0);
+uniform vec3 face_up = vec3(0.0, 1.0, 0.0);
+uniform vec3 face_towards = vec3(0.0, 0.0, 1.0);
+uniform float face_half = 0.0;
+
+#include "sky.gdshaderinc"
 
 const int VIEW_STEPS = 16;
 const int LIGHT_STEPS = 6;
@@ -20,12 +28,14 @@ const int LIGHT_STEPS = 6;
 varying vec3 pos_obj;
 varying vec3 cam_obj;
 varying vec3 sun_obj;
+varying vec3 dir_world;
 
 void vertex() {
 	pos_obj = VERTEX;
 	mat4 inv = inverse(MODEL_MATRIX);
 	cam_obj = (inv * vec4(CAMERA_POSITION_WORLD, 1.0)).xyz;
 	sun_obj = normalize(mat3(inv) * sun_dir_world);
+	dir_world = mat3(MODEL_MATRIX) * VERTEX - (CAMERA_POSITION_WORLD - MODEL_MATRIX[3].xyz);
 	// Standing on the ground the far plane is only ~100 km away, but the top of the air towards
 	// the horizon is over 1000 km off: pin the shell to the far plane so it is never clipped.
 	POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));
@@ -90,6 +100,11 @@ void fragment() {
 		float g2 = mie_g * mie_g;
 		float phase_m = 3.0 / (8.0 * PI) * ((1.0 - g2) * (1.0 + mu * mu)) / ((2.0 + g2) * pow(1.0 + g2 - 2.0 * mie_g * mu, 1.5));
 		result = (sum_r * rayleigh * phase_r + sum_m * mie * phase_m) * sun_color * sun_energy;
+	}
+	if (face_half > 0.0 && !(ground.x > 0.0 && ground.y > ground.x)) {
+		vec3 bend;
+		vec4 face = devourer(normalize(dir_world), face_right, face_up, face_towards, face_half, bend);
+		result *= clamp(1.0 - 0.62 * (1.0 - face.a) + dot(face.rgb, vec3(4.0)), 0.0, 1.15);
 	}
 	ALBEDO = result;
 }

@@ -61,16 +61,21 @@ var _shake_time := 0.0
 
 ## The story: what is coming, what it has eaten, what you did about it.
 var story: Story
-var leviathan: Leviathan
 var ending: Ending
 ## Which window in the tesseract you are looking at (a Story.Choice, or -1).
 var choice_focus := -1
-## 0..1 while the screen goes dark after the Devourer swallows you.
-var swallow_fade := 0.0
-var _swallow_t := -1.0
-## Distance to the Devourer's skin this frame (metres), INF when it is not here.
-var leviathan_distance := INF
-const SWALLOW_SECONDS := 11.0
+## The Devourer's face this frame: unit vector towards the middle of it, its up, half the
+## angle it spans (radians, 0 when it is not here) and how far away it is (metres).
+var face_direction := Vector3.FORWARD
+var face_up := Vector3.UP
+var face_half := 0.0
+var face_range := INF
+## The opening: seconds since the game began (-1 once it is over), and 0..1 for the title.
+var intro_t := -1.0
+var intro_title := 0.0
+const INTRO_SPEAK := 10.0
+const INTRO_TURN := 13.5
+const INTRO_END := 23.0
 
 
 ## The story nodes exist before the HUD (a child, so ready first) looks for them.
@@ -78,10 +83,6 @@ func _enter_tree() -> void:
 	story = Story.new()
 	story.name = "Story"
 	add_child(story)
-	story.swallowed.connect(func() -> void: _swallow_t = 0.0)
-	leviathan = Leviathan.new()
-	leviathan.name = "Leviathan"
-	add_child(leviathan)
 	ending = Ending.new()
 	ending.name = "Ending"
 	add_child(ending)
@@ -101,10 +102,14 @@ func _ready() -> void:
 	plunge.phase_changed.connect(_on_plunge_phase)
 	_build_system(player.system_id)
 	_place_player_near(start_body, start_altitude_m)
+	var capturing := false
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("capture="):
+			capturing = true
 			var cap: Node = load("res://tools/capture_node.gd").new()
 			add_child(cap)
+	if not capturing:
+		begin_intro()
 
 
 func _set_sky_dim(dim: float) -> void:
@@ -192,7 +197,7 @@ func warp_to(body_id: String) -> void:
 	var b := Universe.catalog.body(body_id)
 	if b.is_empty() or not _warp.is_empty() or plunge.phase != Plunge.Phase.NONE:
 		return
-	if is_gone(body_id) or ending.active or _swallow_t >= 0.0:
+	if is_gone(body_id) or ending.active or intro_t >= 0.0:
 		return
 	var cross: bool = b["system"] != player.system_id
 	_warp = {"target": body_id, "t": 0.0, "duration": WARP_CROSS_SECONDS if cross else WARP_SECONDS,
@@ -276,12 +281,12 @@ func is_gone(id: String) -> bool:
 
 
 ## True while the Devourer is somewhere in the system you are in.
-func leviathan_here() -> bool:
+func devourer_here() -> bool:
 	return story.state != Story.State.SAVED and player.system_id == Story.SYSTEM
 
 
 func _process(delta: float) -> void:
-	_advance_swallow(delta)
+	_advance_intro(delta)
 	if plunge.phase == Plunge.Phase.TESSERACT or plunge.phase == Plunge.Phase.LEAVING:
 		_process_tesseract()
 		return
@@ -323,19 +328,8 @@ func _process(delta: float) -> void:
 			nearest_alt = alt
 			nearest_id = id
 
-	# The Devourer counts as a surface too: you slow down as you close on it, and it can eat you.
-	var head := DVec3.new()
-	var heading := Vector3.FORWARD
-	leviathan_distance = INF
-	if leviathan_here():
-		head = story.head()
-		heading = story.heading()
-		leviathan_distance = StoryMath.distance_to(player.pos, head, heading)
-		if leviathan_distance < 0.0 and plunge.phase == Plunge.Phase.NONE and _warp.is_empty():
-			story.be_swallowed()
-	player.hazard_altitude = maxf(leviathan_distance, 0.0)
 	if nearest_id == "":
-		nearest_alt = minf(maxf(leviathan_distance, 1.0e6), 1.0e14)
+		nearest_alt = 1.0e13
 
 	var sea_alt := nearest_alt
 	nearest_alt = _measure_ground(nearest_id, centers, t, nearest_alt)
@@ -371,63 +365,87 @@ func _process(delta: float) -> void:
 	sky.global_transform = Transform3D(_sky_basis.scaled(Vector3.ONE * space.far * 0.95), Vector3.ZERO)
 	stars.global_transform = Transform3D(_sky_basis.scaled(Vector3.ONE * space.far * 0.93), Vector3.ZERO)
 	stars.visible = sky.visible and not _at_core
-	_update_devourer(head, heading)
+	_update_devourer()
 
 
-## Draw the Devourer where it is, and take out of the sky everything it has eaten behind it.
-func _update_devourer(head: DVec3, heading: Vector3) -> void:
+## Put the Devourer's face in the sky: where it is from here, how much of the sky it spans.
+func _update_devourer() -> void:
 	var sky_m := sky.material_override as ShaderMaterial
-	if not leviathan_here():
-		leviathan.visible = false
-		sky_m.set_shader_parameter("void_radius", 0.0)
-		stars.set_void(Vector3.BACK, 0.0)
+	if not devourer_here():
+		face_half = 0.0
+		face_range = INF
+		sky_m.set_shader_parameter("face_half", 0.0)
+		stars.set_face(Vector3.RIGHT, Vector3.UP, Vector3.BACK, 0.0)
+		_face_to_air(0.0)
 		return
-	var sun_gone := is_gone("sun")
-	leviathan.place(head.sub(player.pos), heading, space, head.scaled(-1.0).normalized().to_vector3(), 0.0 if sun_gone else 1.0)
-	# The hole in the sky sits where it came from and grows as it comes.
-	var from_dir := _sky_basis.inverse() * DVec3.from_vector3(StoryMath.START).sub(player.pos).normalized().to_vector3()
-	var radius := StoryMath.void_radius(story.time)
-	sky_m.set_shader_parameter("void_dir", from_dir)
-	sky_m.set_shader_parameter("void_radius", radius)
-	stars.set_void(from_dir, radius)
-	if sun_gone:
+	var rel := StoryMath.face_position(story.time).sub(player.pos)
+	face_range = rel.length()
+	face_direction = rel.normalized().to_vector3()
+	face_up = StoryMath.face_up(face_direction)
+	face_half = StoryMath.half_angle(face_range)
+	# The sky shaders work in the sky's own frame.
+	var to_sky := _sky_basis.inverse()
+	var towards := to_sky * face_direction
+	var up := to_sky * face_up
+	var right := up.cross(towards)
+	sky_m.set_shader_parameter("face_right", right)
+	sky_m.set_shader_parameter("face_up", up)
+	sky_m.set_shader_parameter("face_towards", towards)
+	sky_m.set_shader_parameter("face_half", face_half)
+	stars.set_face(right, up, towards, face_half)
+	_face_to_air(face_half)
+	if is_gone("sun"):
 		star_energy = 0.05
 
 
-## Coming out of the tesseract straight into its mouth would be no choice at all: if it is
-## right there, start a little way off to one side of it.
-func _clear_of_devourer() -> void:
-	if not leviathan_here():
-		return
-	var head := story.head()
-	var heading := story.heading()
-	var safe := 0.4 * StoryMath.AU
-	var d := StoryMath.distance_to(player.pos, head, heading)
-	if d >= safe:
-		return
-	var rel := player.pos.sub(head).scaled(1.0 / StoryMath.AU).to_vector3()
-	var side := rel - heading * rel.dot(heading)
-	if side.length() < 1.0e-4:
-		side = heading.cross(Vector3.UP)
-	player.pos = player.pos.add(DVec3.from_vector3(side.normalized()).scaled(safe - d))
-	_frame_body = ""
+## Daylight hides the stars but not the face: the air shaders darken the sky where it is.
+func _face_to_air(half: float) -> void:
+	for id in bodies:
+		for m: ShaderMaterial in _materials_of(bodies[id]):
+			if m.shader == BodyVisuals.ATMO_SHADER:
+				m.set_shader_parameter("face_right", face_up.cross(face_direction))
+				m.set_shader_parameter("face_up", face_up)
+				m.set_shader_parameter("face_towards", face_direction)
+				m.set_shader_parameter("face_half", half)
 
 
-## Swallowed: the view goes dark, a few seconds of nothing, and then it all begins again.
-func _advance_swallow(delta: float) -> void:
-	if _swallow_t < 0.0:
-		swallow_fade = move_toward(swallow_fade, 0.0, delta / 3.0)
+## The opening. For ten seconds there is only Earth. Then Dispatch speaks, your head is turned
+## to the thing in the sky, you are made to look at it, and only then are you let go.
+func begin_intro() -> void:
+	intro_t = 0.0
+	# Start where Earth is at your back when you face the thing, so nothing hides it.
+	var b := Universe.catalog.body(start_body)
+	var center := Universe.catalog.body_position(start_body, Universe.sim_time)
+	var to_face := StoryMath.face_position(0.0).sub(center).normalized().to_vector3()
+	var to_star := center.scaled(-1.0).normalized().to_vector3()
+	var dir := (to_face * 0.62 + to_star * 0.7 + Vector3.UP * 0.2).normalized()
+	player.pos = center.add(DVec3.from_vector3(dir).scaled(b["radius_m"] + start_altitude_m))
+	player.look_at(-dir, Vector3.UP)
+	_frame_body = start_body
+	_frame_prev = center
+
+
+func _advance_intro(delta: float) -> void:
+	if intro_t < 0.0:
+		intro_title = move_toward(intro_title, 0.0, delta)
 		return
-	_swallow_t += delta
-	swallow_fade = clampf(_swallow_t / 2.5, 0.0, 1.0)
+	var before := intro_t
+	intro_t += delta
 	player.controls_locked = true
-	if _swallow_t >= SWALLOW_SECONDS:
-		_swallow_t = -1.0
-		story.restart()
+	player.input_blocked = true
+	intro_title = smoothstep(1.0, 3.0, intro_t) * (1.0 - smoothstep(6.5, 8.5, intro_t))
+	if before < INTRO_SPEAK and intro_t >= INTRO_SPEAK:
+		story.say("dispatch", Story.OPENING)
+	if intro_t >= INTRO_TURN and face_half > 0.0:
+		# Slowly at first, the way you turn to look at something you do not want to see.
+		var want := Basis.looking_at(face_direction, face_up)
+		var rate := 1.1 * smoothstep(INTRO_TURN, INTRO_TURN + 2.5, intro_t)
+		player.transform.basis = player.transform.basis.slerp(want, 1.0 - exp(-rate * delta)).orthonormalized()
+	if intro_t >= INTRO_END:
+		intro_t = -1.0
 		player.controls_locked = false
-		if player.system_id != Story.SYSTEM:
-			_build_system(Story.SYSTEM)
-		_place_player_near(start_body, start_altitude_m)
+		player.input_blocked = false
+		story.say("self", Story.AFTER_OPENING)
 
 
 ## Close to a spinning body you turn with it, as if its air and gravity had hold of you.
@@ -567,7 +585,6 @@ func _on_plunge_phase(phase: Plunge.Phase) -> void:
 	story.paused = phase != Plunge.Phase.NONE
 	match phase:
 		Plunge.Phase.TESSERACT:
-			leviathan.visible = false
 			choice_focus = -1
 			tesseract.open_choices(player.global_basis)
 			_tesseract_origin = player.pos.duplicate()
@@ -590,7 +607,6 @@ func _on_plunge_phase(phase: Plunge.Phase) -> void:
 			plunge.choice = Story.Choice.NONE
 			story.apply_choice(choice)
 			travel_to_body(Plunge.EXIT_BODY)
-			_clear_of_devourer()
 			if choice == Story.Choice.THEN:
 				ending.start()
 
