@@ -96,3 +96,19 @@ vec3 sky_color(sampler2D pano, vec3 d, float core) {
 	glow += vec3(0.55, 0.12, 0.1) * smoothstep(0.55, 0.8, gas) * plane * 0.1;
 	return mix(home, crowd + glow + c * 0.25, core);
 }
+
+// The hole the Devourer leaves in the sky: everything within a ragged patch around `vdir` is
+// gone. Returns how much of the sky survives along `d` (0 inside the hole, 1 outside), and in
+// `edge` how close `d` is to the torn rim. `vrad` is the patch's angular radius in radians.
+float void_mask(vec3 d, vec3 vdir, float vrad, out float edge) {
+	edge = 0.0;
+	if (vrad <= 0.0) {
+		return 1.0;
+	}
+	float ang = acos(clamp(dot(d, vdir), -1.0, 1.0));
+	float ragged = sky_fbm(d * 5.0 + 2.0) * 0.65 + sky_fbm(d * 21.0) * 0.35;
+	float r = vrad * (0.5 + 1.0 * ragged);
+	float soft = 0.002 + vrad * 0.012;
+	edge = exp(-abs(ang - r) / soft);
+	return smoothstep(r - soft, r + soft, ang);
+}

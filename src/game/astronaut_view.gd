@@ -31,6 +31,10 @@ var _look_lag := Vector2.ZERO
 var _prev_basis := Basis.IDENTITY
 var _thrust := 0.0
 var _time := 0.0
+var _stage: Node3D
+## Set by the ending: where the astronaut is, instead of just ahead of the camera.
+var body_override: Variant = null
+var hide_body := false
 
 @onready var space_view := get_node(space_view_path) as SpaceView
 
@@ -62,6 +66,8 @@ func _ready() -> void:
 	_light.light_energy = 2.2
 	_viewport.add_child(_light)
 
+	_stage = Node3D.new()
+	_viewport.add_child(_stage)
 	_body = Node3D.new()
 	_body.position = CAMERA_OFFSET
 	_viewport.add_child(_body)
@@ -87,16 +93,41 @@ func _fit() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("toggle_view"):
+	if event.is_action_pressed("toggle_view") and body_override == null:
 		# Third person (whole astronaut ahead of you) <-> first person (your own hands).
 		_first_person = not _first_person
 		_body.visible = not _first_person
 		_hands.visible = _first_person
 
 
+## A place in the astronaut's small world for other things that must be drawn at human scale
+## (the rescue ship). Its axes are the camera's: -Z ahead, +Y up.
+func stage() -> Node3D:
+	return _stage
+
+
+## How far the small world's camera sees (metres).
+func set_reach(far: float) -> void:
+	_camera.far = far
+
+
+func force_third_person() -> void:
+	_first_person = false
+	_body.visible = true
+	_hands.visible = false
+
+
 func _process(delta: float) -> void:
 	if not visible:
 		return
+	_animate(delta)
+	# A cutscene can take the astronaut out of your hands (camera axes, metres).
+	if body_override != null:
+		_body.position = body_override
+		_body.visible = not hide_body
+
+
+func _animate(delta: float) -> void:
 	_time += delta
 	var player := space_view.player
 	_camera.fov = player.camera.fov

@@ -28,6 +28,8 @@ var throttle: int = 0
 var nearest_altitude: float = INF
 var nearest_body_id: String = ""
 var nearest_is_black_hole: bool = false
+## Distance to something that is not a world but still slows you down (the Devourer).
+var hazard_altitude: float = INF
 ## True while something else is moving the astronaut (the fall into a black hole). You can still look.
 var controls_locked: bool = false
 ## True while the travel menu is open: sticks and buttons drive the menu, not the astronaut.
@@ -132,7 +134,7 @@ func _process(delta: float) -> void:
 		_walk(input, delta)
 		return
 
-	var top_speed := Flight.max_speed(nearest_altitude, throttle, nearest_is_black_hole)
+	var top_speed := Flight.max_speed(minf(nearest_altitude, hazard_altitude), throttle, nearest_is_black_hole)
 	if Input.is_action_pressed("boost"):
 		top_speed *= BOOST_MULTIPLIER
 	var target := transform.basis * input * top_speed

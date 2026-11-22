@@ -43,3 +43,9 @@ func _ready() -> void:
 func set_brightness(b: float) -> void:
 	_material.set_shader_parameter("brightness", b)
 	_material.set_shader_parameter("pixel_scale", maxf(DisplayServer.window_get_size().y, 360.0) / 1080.0)
+
+
+## The patch of sky the Devourer has eaten (direction in the sky frame, radius in radians).
+func set_void(dir: Vector3, radius: float) -> void:
+	_material.set_shader_parameter("void_dir", dir)
+	_material.set_shader_parameter("void_radius", radius)

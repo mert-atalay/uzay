@@ -8,8 +8,8 @@ signal phase_changed(phase: Phase)
 
 enum Phase { NONE, FALLING, TESSERACT, LEAVING }
 
-## Seconds inside the tesseract before you may let go.
-const TESSERACT_MIN_SECONDS := 25.0
+## Seconds inside the tesseract before the windows open.
+const CHOICE_SECONDS := 16.0
 const LEAVE_SECONDS := 3.5
 ## Where the tesseract drops you (as in the film: near Saturn).
 const EXIT_BODY := "saturn"
@@ -22,6 +22,8 @@ var hole_id := ""
 var direction := Vector3.UP
 ## White-out over the screen, 0..1 (the HUD draws it).
 var white := 0.0
+## Which window you reached through (a Story.Choice), read by SpaceView when you come out.
+var choice := -1
 
 
 func begin_fall(id: String, dir: Vector3) -> void:
@@ -41,12 +43,14 @@ func fall_progress() -> float:
 	return clampf(t / PlungeMath.FALL_SECONDS, 0.0, 1.0) if phase == Phase.FALLING else 0.0
 
 
-func can_leave() -> bool:
-	return phase == Phase.TESSERACT and t >= TESSERACT_MIN_SECONDS
+func can_choose() -> bool:
+	return phase == Phase.TESSERACT and t >= CHOICE_SECONDS + 2.0
 
 
-func leave() -> void:
-	if can_leave():
+## Reach through one of the windows: the tesseract lets go of you.
+func choose(which: int) -> void:
+	if can_choose() and which >= 0:
+		choice = which
 		_set_phase(Phase.LEAVING)
 
 

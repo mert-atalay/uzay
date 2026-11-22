@@ -16,14 +16,24 @@ const STRAND_SHADER := preload("res://shaders/tesseract_strand.gdshader")
 const ECHO_SHADER := preload("res://shaders/tesseract_echo.gdshader")
 const ECHO_WORLDS := ["earth.jpg", "mars.jpg", "saturn.jpg", "jupiter.jpg", "moon.jpg", "neptune.jpg"]
 
+const WINDOW_SHADER := preload("res://shaders/tesseract_window.gdshader")
+## How close you must come to a window to fall through it, and how far it hangs from you.
+const WINDOW_TOUCH := 4.5
+const WINDOW_DISTANCE := 30.0
+
 var _strand_material: ShaderMaterial
 var _echo_material: ShaderMaterial
+## The three windows, in Story.Choice order, and where each hangs (tesseract metres).
+var _windows: Array[MeshInstance3D] = []
+var _window_pos: Array[Vector3] = []
+var _focus: Array[float] = [0.0, 0.0, 0.0]
 
 
 func _ready() -> void:
 	visible = false
 	_build_strands()
 	_build_echoes()
+	_build_windows()
 
 
 ## `p` is the player's position inside the tesseract, in metres from where they arrived.
@@ -120,3 +130,72 @@ func _build_echoes() -> void:
 		_echo_material.set_shader_parameter("world%d" % w, BodyVisuals.texture(ECHO_WORLDS[w]))
 	inst.material_override = _echo_material
 	add_child(inst)
+
+
+func _build_windows() -> void:
+	var quad := QuadMesh.new()
+	quad.size = Vector2(1.0, 1.0)
+	var looks := [
+		["earth.jpg", Color(1.0, 0.72, 0.38), 0.0], # then: Earth, long ago
+		["earth.jpg", Color(0.55, 0.78, 1.0), 1.0], # now: Earth, this morning
+		["moon.jpg", Color(0.5, 0.3, 1.0), 2.0], # it
+	]
+	for look in looks:
+		var mi := MeshInstance3D.new()
+		mi.mesh = quad
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.custom_aabb = AABB(Vector3.ONE * -12.0, Vector3.ONE * 24.0)
+		var m := ShaderMaterial.new()
+		m.shader = WINDOW_SHADER
+		m.set_shader_parameter("world", BodyVisuals.texture(look[0]))
+		m.set_shader_parameter("tint", look[1])
+		m.set_shader_parameter("kind", look[2])
+		mi.material_override = m
+		mi.visible = false
+		add_child(mi)
+		_windows.append(mi)
+		_window_pos.append(Vector3.ZERO)
+
+
+## Hang the three windows in front of where you are looking. `at` is your place in the tesseract.
+func open_choices(view: Basis, at := Vector3.ZERO) -> void:
+	var f := -view.z
+	_window_pos[0] = at + f * WINDOW_DISTANCE - view.x * 15.0 + view.y * 1.5
+	_window_pos[1] = at + f * (WINDOW_DISTANCE + 4.0) + view.y * 5.0
+	_window_pos[2] = at + f * WINDOW_DISTANCE + view.x * 15.0 - view.y * 2.0
+
+
+func close_choices() -> void:
+	for w in _windows:
+		w.visible = false
+
+
+## Place the windows around the player at `p`. `age` is seconds since they opened (negative:
+## not yet). Returns {"focus": the window being looked at or -1, "touched": the one flown into or -1}.
+func update_choices(p: Vector3, view: Basis, age: float) -> Dictionary:
+	var out := {"focus": -1, "touched": -1}
+	if age < 0.0:
+		close_choices()
+		return out
+	# Wander too far and they come to you.
+	if ((_window_pos[0] + _window_pos[1] + _window_pos[2]) / 3.0 - p).length() > 80.0:
+		open_choices(view, p)
+	var appear := clampf(age / 4.0, 0.0, 1.0)
+	var look := -view.z
+	var best := 0.24 # radians: how near the middle of the view counts as looking at it
+	for i in _windows.size():
+		var rel := _window_pos[i] - p
+		_windows[i].visible = true
+		_windows[i].global_position = rel
+		if rel.length() < WINDOW_TOUCH and appear >= 1.0:
+			out["touched"] = i
+		var off := look.angle_to(rel)
+		if off < best:
+			best = off
+			out["focus"] = i
+	for i in _windows.size():
+		_focus[i] = lerpf(_focus[i], 1.0 if out["focus"] == i else 0.0, 0.1)
+		var m := _windows[i].material_override as ShaderMaterial
+		m.set_shader_parameter("focus", _focus[i])
+		m.set_shader_parameter("appear", appear)
+	return out

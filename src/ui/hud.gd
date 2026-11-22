@@ -37,6 +37,7 @@ func _ready() -> void:
 		music.play()
 	(space_view.get_node("Plunge") as Plunge).phase_changed.connect(_on_plunge_phase)
 	_setup_dread()
+	_setup_story()
 	_flare = ColorRect.new()
 	_flare.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_flare.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -105,6 +106,9 @@ func _update_dread(p: Player, delta: float) -> void:
 	elif plunge.phase == Plunge.Phase.NONE and p.nearest_is_black_hole:
 		var rs: float = Universe.catalog.body(p.nearest_body_id)["radius_m"]
 		target = clampf(1.0 - log(1.0 + maxf(p.nearest_altitude, 0.0) / rs) / log(40.0), 0.0, 1.0)
+	# The Devourer does the same to you as the black hole, from half an AU away.
+	if plunge.phase == Plunge.Phase.NONE:
+		target = maxf(target, clampf(1.0 - space_view.leviathan_distance / (0.5 * StoryMath.AU), 0.0, 1.0))
 	_dread = lerpf(_dread, target, 1.0 - exp(-1.5 * delta))
 	(_vignette.material as ShaderMaterial).set_shader_parameter("amount", 0.6 * _dread)
 	if _drone.stream != null:
@@ -122,6 +126,8 @@ func _update_flare(p: Player) -> void:
 		return
 	var primary := Universe.catalog.primary_of(p.system_id)
 	if primary.is_empty() or primary["kind"] != "star" or not space_view.bodies.has(primary["id"]):
+		return
+	if not (space_view.bodies[primary["id"]] as Node3D).visible:
 		return
 	var cam := p.camera
 	var origin := cam.global_position
@@ -206,9 +212,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		marker_layer.visible = _markers_visible
 	elif event.is_action_pressed("time_scale"):
 		Universe.cycle_time_scale()
-	elif space_view.plunge.can_leave() and (event.is_action_pressed("travel_menu") \
+	elif space_view.plunge.can_choose() and (event.is_action_pressed("travel_menu") or event.is_action_pressed("warp_to_look") \
 			or (event is InputEventKey and event.pressed and event.keycode in [KEY_ENTER, KEY_KP_ENTER])):
-		space_view.plunge.leave()
+		space_view.plunge.choose(space_view.choice_focus)
+	elif space_view.ending.active or space_view.swallow_fade > 0.0:
+		pass # nothing is yours to do while the ending plays or the dark has you
 	elif event.is_action_pressed("travel_menu") and space_view.plunge.phase == Plunge.Phase.NONE:
 		if travel_menu.visible:
 			travel_menu.close()
@@ -244,7 +252,7 @@ func _update_plunge(p: Player) -> void:
 	(warp.material as ShaderMaterial).set_shader_parameter("amount", space_view.warp_amount)
 	heat.visible = space_view.entry_heat > 0.01
 	(heat.material as ShaderMaterial).set_shader_parameter("heat", space_view.entry_heat)
-	var in_space := plunge.phase == Plunge.Phase.NONE
+	var in_space := plunge.phase == Plunge.Phase.NONE and not space_view.ending.active and space_view.swallow_fade <= 0.0
 	if space_view.is_warping():
 		notice.text = ""
 	info.visible = in_space
@@ -267,9 +275,10 @@ func _update_plunge(p: Player) -> void:
 				notice.text = "You crossed the event horizon. Nothing comes back from here."
 				notice.modulate = Color(1.0, 0.9, 0.8, clampf(minf(plunge.t, 8.0 - plunge.t), 0.0, 1.0))
 		Plunge.Phase.TESSERACT:
-			if plunge.can_leave():
-				notice.text = "Press Start to let go" if _using_pad else "Press Enter to let go"
-				notice.modulate = Color(1.0, 0.92, 0.8, 0.5 + 0.3 * sin(Time.get_ticks_msec() * 0.003))
+			if plunge.can_choose() and space_view.choice_focus >= 0:
+				notice.text = "%s\n%s" % [Story.CHOICE_CAPTIONS[space_view.choice_focus],
+					"Start: reach through" if _using_pad else "Enter: reach through"]
+				notice.modulate = Color(1.0, 0.92, 0.8, 0.9)
 
 
 func _process(delta: float) -> void:
@@ -288,6 +297,7 @@ func _process(delta: float) -> void:
 		if p.nearest_altitude < rs * 40.0:
 			info.text += "\n1 hour here = %s on Earth" % Fmt.duration(3600.0 * time_dilation(p.nearest_altitude, rs))
 	_update_dread(p, delta)
+	_update_story(delta)
 	_update_flare(p)
 	if Time.get_ticks_msec() / 1000.0 < _shot_note_until:
 		info.text += "\n" + info_note
@@ -314,7 +324,14 @@ func _looked_at_target() -> String:
 func _update_markers() -> void:
 	var cam := space_view.player.camera
 	var seen := {}
+	if space_view.leviathan.visible and space_view.story.marker_shown():
+		var away := space_view.story.head().sub(space_view.player.pos).length()
+		_show_marker(cam, "_devourer", space_view.leviathan.global_position, "UNKNOWN  %s" % Fmt.distance(away), seen)
+		if _markers.has("_devourer"):
+			(_markers["_devourer"] as Label).add_theme_color_override("font_color", Color(1.0, 0.55, 0.6, 0.85))
 	for id in space_view.bodies:
+		if not (space_view.bodies[id] as Node3D).visible:
+			continue
 		var b := Universe.catalog.body(id)
 		if b["kind"] == "moon" and b["parent"] != space_view.player.nearest_body_id \
 				and id != space_view.player.nearest_body_id:
@@ -353,3 +370,107 @@ func _show_marker(cam: Camera3D, id: String, world_pos: Vector3, text: String, s
 	label.position = screen + Vector2(-4, -9)
 	label.visible = true
 	seen[id] = true
+
+
+# --- The story on screen: who is talking, the dark when it has you, the closing title. ---
+
+var _sub_box: VBoxContainer
+var _sub_who: Label
+var _sub_text: Label
+var _sub_queue: Array = []
+var _sub_t := 0.0
+var _sub_seconds := 0.0
+var _black: ColorRect
+var _title: Label
+var _title_sub: Label
+
+const SPEAKERS := {
+	"dispatch": ["EARTH DISPATCH", Color(0.6, 0.82, 1.0)],
+	"ship": ["VIGIL", Color(1.0, 0.85, 0.6)],
+	"self": ["", Color(1.0, 0.95, 0.86)],
+}
+
+
+func _setup_story() -> void:
+	_black = ColorRect.new()
+	_black.color = Color(0.0, 0.0, 0.0, 0.0)
+	_black.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_black.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_black)
+	_title = _centered_label(54, -70.0)
+	_title_sub = _centered_label(20, 10.0)
+	_sub_box = VBoxContainer.new()
+	_sub_box.anchor_left = 0.5
+	_sub_box.anchor_right = 0.5
+	_sub_box.anchor_top = 1.0
+	_sub_box.anchor_bottom = 1.0
+	_sub_box.offset_left = -470.0
+	_sub_box.offset_right = 470.0
+	_sub_box.offset_top = -210.0
+	_sub_box.offset_bottom = -70.0
+	_sub_box.alignment = BoxContainer.ALIGNMENT_END
+	_sub_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_sub_box)
+	_sub_who = Label.new()
+	_sub_who.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_sub_who.add_theme_font_size_override("font_size", 13)
+	_sub_who.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
+	_sub_who.add_theme_constant_override("outline_size", 5)
+	notice.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.8))
+	notice.add_theme_constant_override("outline_size", 6)
+	_sub_box.add_child(_sub_who)
+	_sub_text = Label.new()
+	_sub_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_sub_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_sub_text.add_theme_font_size_override("font_size", 21)
+	_sub_text.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
+	_sub_text.add_theme_constant_override("outline_size", 6)
+	_sub_box.add_child(_sub_text)
+	_sub_box.modulate.a = 0.0
+	space_view.story.line.connect(func(who: String, text: String) -> void: _sub_queue.append([who, text]))
+
+
+func _centered_label(font_size: int, top: float) -> Label:
+	var l := Label.new()
+	l.anchor_left = 0.0
+	l.anchor_right = 1.0
+	l.anchor_top = 0.5
+	l.anchor_bottom = 0.5
+	l.offset_top = top
+	l.offset_bottom = top + font_size * 1.6
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.add_theme_font_size_override("font_size", font_size)
+	l.modulate.a = 0.0
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(l)
+	return l
+
+
+func _update_story(delta: float) -> void:
+	# Lines are typed out one at a time and stay long enough to read.
+	_sub_t += delta
+	if _sub_t >= _sub_seconds and not _sub_queue.is_empty():
+		var next: Array = _sub_queue.pop_front()
+		var who: Array = SPEAKERS.get(next[0], SPEAKERS["self"])
+		_sub_who.text = who[0]
+		_sub_who.modulate = who[1]
+		_sub_text.text = next[1]
+		_sub_text.add_theme_color_override("font_color", (who[1] as Color).lerp(Color.WHITE, 0.6))
+		_sub_t = 0.0
+		_sub_seconds = 4.0 + 0.07 * (next[1] as String).length()
+	_sub_text.visible_characters = int(_sub_t * 42.0)
+	_sub_box.modulate.a = clampf(minf(_sub_t * 3.0, _sub_seconds - _sub_t), 0.0, 1.0) if _sub_t < _sub_seconds else 0.0
+
+	var ending := space_view.ending
+	_black.color.a = maxf(space_view.swallow_fade, ending.black)
+	if space_view._swallow_t >= 0.0:
+		var st: float = space_view._swallow_t
+		_title.text = ""
+		_title.modulate.a = 0.0
+		_title_sub.text = "It did not notice you." if st < 7.5 else "Again."
+		_title_sub.modulate.a = smoothstep(3.0, 4.5, st) * (1.0 - smoothstep(6.5, 7.4, st)) + smoothstep(7.6, 8.4, st) * (1.0 - smoothstep(9.8, 10.8, st))
+	else:
+		_title.text = "U Z A Y"
+		_title_sub.text = "A thousand years ago, someone looked up."
+		_title.modulate.a = ending.title
+		_title_sub.modulate.a = ending.title

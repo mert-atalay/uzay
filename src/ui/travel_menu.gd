@@ -69,7 +69,7 @@ func _rebuild() -> void:
 
 func _add_children(parent_item: TreeItem, system_id: String, parent_id: Variant, depth: int) -> void:
 	for b in Universe.catalog.bodies_in_system(system_id):
-		if b["parent"] != parent_id:
+		if b["parent"] != parent_id or space_view.is_gone(b["id"]):
 			continue
 		var item := _tree.create_item(parent_item)
 		item.set_text(0, b["name"])
