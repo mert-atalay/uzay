@@ -3,9 +3,10 @@ extends RefCounted
 ## The thing that is coming. Pure maths, no nodes: where the Devourer is at a given story time,
 ## how much of the sky it fills, and which worlds are already gone.
 ##
-## It is a face wider than the Solar System, carved into space itself, drifting in from one
-## fixed direction. It never hurries and never turns. Worlds simply stop being there as it
-## nears, outermost first. Times are seconds of play.
+## It is a cloud wider than the Solar System with a face in it, drifting in from one fixed
+## direction. It never hurries and never turns: its face looks straight down the line it moves
+## along, so from the side or from behind there is only mist. Its mouth opens just before each
+## world goes, outermost first. Times are seconds of play.
 
 ## The worlds it eats, in order, and when (seconds since the story began).
 const ORDER: Array[String] = ["pluto", "neptune", "uranus", "saturn", "jupiter", "mars", "earth", "venus", "mercury", "sun"]
@@ -20,6 +21,9 @@ const START_DISTANCE := 520.0 * AU
 const END_DISTANCE := 45.0 * AU
 ## It leans a little, like a head that has never needed to hold itself straight (radians).
 const TILT := 0.21
+## How long before a world goes its mouth starts to open, and how long it takes to shut (s).
+const MOUTH_OPENS := 50.0
+const MOUTH_CLOSES := 30.0
 
 
 static func end_time() -> float:
@@ -56,10 +60,28 @@ static func half_angle(range_m: float) -> float:
 	return atan(HEIGHT * 0.5 / maxf(range_m, 1.0))
 
 
-## Which way is up for its face (unit vector, system axes), square to `towards` (the unit
-## vector from the viewer to its face).
-static func face_up(towards: Vector3) -> Vector3:
-	var up := Vector3.UP - towards * Vector3.UP.dot(towards)
-	if up.length() < 1.0e-4:
-		up = Vector3.RIGHT
-	return up.normalized().rotated(towards, TILT)
+## Which way its face looks (unit vector, system axes): straight at the Sun, always.
+static func face_normal() -> Vector3:
+	return -DIRECTION.normalized()
+
+
+## Which way is up for its face (unit vector, system axes). Fixed: it does not turn.
+static func face_up() -> Vector3:
+	var n := face_normal()
+	var up := Vector3.UP - n * Vector3.UP.dot(n)
+	return up.normalized().rotated(n, TILT)
+
+
+## Its left-to-right axis, so that (right, up, normal) is a right-handed set.
+static func face_right() -> Vector3:
+	return face_up().cross(face_normal())
+
+
+## How far its mouth is open at time t: 0 shut .. 1 gaping. It opens slowly before each world
+## goes, is widest as it goes, and closes again afterwards.
+static func mouth_open(t: float) -> float:
+	var open := 0.0
+	for e in EAT_TIMES:
+		var k := smoothstep(e - MOUTH_OPENS, e - 4.0, t) if t <= e else 1.0 - smoothstep(e, e + MOUTH_CLOSES, t)
+		open = maxf(open, k)
+	return open

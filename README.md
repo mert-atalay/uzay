@@ -38,8 +38,8 @@ destination, B / Esc closes. The bottom-left hint line names the controller the 
 **The black hole:** press B to jump next to Sagittarius A*, then hold W. It pulls you in as you get close. Cross the event horizon
 and there is no way back: you fall for about a minute, then the tesseract opens.
 
-**The story (spoilers, the game itself never says any of this):** a face wider than the Solar System is
-carved into the sky, and it is coming. It does not notice you. Worlds simply stop being there as it nears,
+**The story (spoilers, the game itself never says any of this):** a cloud wider than the Solar System, with
+a face in it, is coming. It opens its mouth only when a world is about to go. It does not notice you. Worlds simply stop being there as it nears,
 outermost first (Earth after 27 minutes of play). Earth Dispatch and your own thoughts tell you how close
 it is, and you can see it from every world, even through a daylight sky. The only way to stop it is inside
 the black hole: after a while three windows open in the tesseract. Look at one to read it, then fly into it
@@ -65,3 +65,5 @@ The original AI Studio prototype is kept in `prototype-web/` for reference.
 The sky is real: the Milky Way panorama comes from [Stellarium](https://github.com/Stellarium/stellarium)
 (GPL) and the stars from the [HYG database](https://github.com/astronexus/HYG-Database) (CC BY-SA).
 `tools/bake_sky.py` turns them into the game's files.
+
+The rescue ship is "Osiris Mothership" by alx_flameniro (Sketchfab, CC BY 4.0).

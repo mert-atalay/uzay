@@ -17,7 +17,9 @@ uniform float sun_energy = 18.0;
 // daylight as a darkening of the sky itself.
 uniform vec3 face_right = vec3(1.0, 0.0, 0.0);
 uniform vec3 face_up = vec3(0.0, 1.0, 0.0);
-uniform vec3 face_towards = vec3(0.0, 0.0, 1.0);
+uniform vec3 face_normal = vec3(0.0, 0.0, 1.0);
+uniform vec3 face_center = vec3(0.0, 0.0, 9.0);
+uniform float face_mouth = 0.0;
 uniform float face_half = 0.0;
 
 #include "sky.gdshaderinc"
@@ -102,8 +104,7 @@ void fragment() {
 		result = (sum_r * rayleigh * phase_r + sum_m * mie * phase_m) * sun_color * sun_energy;
 	}
 	if (face_half > 0.0 && !(ground.x > 0.0 && ground.y > ground.x)) {
-		vec3 bend;
-		vec4 face = devourer(normalize(dir_world), face_right, face_up, face_towards, face_half, bend);
+		vec4 face = devourer(normalize(dir_world), face_center, face_right, face_up, face_normal, face_mouth);
 		result *= clamp(1.0 - 0.62 * (1.0 - face.a) + dot(face.rgb, vec3(4.0)), 0.0, 1.15);
 	}
 	ALBEDO = result;

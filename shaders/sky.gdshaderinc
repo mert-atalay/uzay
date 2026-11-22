@@ -97,83 +97,111 @@ vec3 sky_color(sampler2D pano, vec3 d, float core) {
 	return mix(home, crowd + glow + c * 0.25, core);
 }
 
-// --- The Devourer: a face carved into space itself. ---
-// It has no flesh. It is seen by what it does to the sky: the stars thin out across it, are
-// gone entirely in the hollows of its eyes and mouth, and the relief of its features catches a
-// little cold light. All of this is worked out in two dimensions on the sky: `p` is a point on
-// its face, x to its left and right, y from chin (-1) to crown (+1).
+// --- The Devourer: a cloud wider than the Solar System, with a face in it. ---
+// It is a real thing with a real place: a slab of thin cold mist, fixed in space, that does
+// not turn to look at anyone. Each ray of sight is marched through it. All positions here are
+// in its own axes and measured in half-heights: x to its side, y from chin (-1) to crown (+1),
+// z out of its face (+) towards what it is coming for. The eyes and mouth are hollows in the
+// front of the cloud only, so from the side or from behind there is nothing but mist.
 
-// How far each part of the face stands out of the sky: 0 = not there, about 1 = the nose.
-float face_relief(vec2 p) {
-	// The skull: tall, narrowing to the chin.
-	float w = 0.7 * (1.0 - 0.3 * smoothstep(0.1, -1.0, p.y));
-	float r2 = (p.x * p.x) / (w * w) + p.y * p.y;
-	float h = sqrt(max(1.0 - r2, 0.0)) * 0.75;
-	float ax = abs(p.x);
-	// Brow ridge, and the hollows of the eyes under it.
-	h += 0.14 * exp(-pow((p.y - 0.25) / 0.075, 2.0)) * smoothstep(0.62, 0.12, ax);
-	vec2 e = vec2(ax - 0.27, p.y - 0.1);
-	h -= 0.42 * exp(-pow(e.x / 0.165, 2.0) - pow(e.y / 0.085, 2.0));
-	// Nose: a long ridge, strongest at the tip.
-	float along = smoothstep(0.3, 0.12, p.y) * smoothstep(-0.34, -0.22, p.y);
-	h += 0.26 * exp(-pow(p.x / 0.065, 2.0)) * along * (0.35 + 0.65 * smoothstep(0.25, -0.25, p.y));
-	h += 0.07 * exp(-pow((ax - 0.085) / 0.05, 2.0) - pow((p.y + 0.26) / 0.05, 2.0));
-	// Cheekbones, the hollows under them, and the chin.
-	h += 0.1 * exp(-pow((ax - 0.43) / 0.16, 2.0) - pow((p.y + 0.04) / 0.13, 2.0));
-	h -= 0.1 * exp(-pow((ax - 0.36) / 0.14, 2.0) - pow((p.y + 0.42) / 0.16, 2.0));
-	h += 0.08 * exp(-pow(p.x / 0.2, 2.0) - pow((p.y + 0.8) / 0.11, 2.0));
-	// The mouth: closed, a long line, with the lips above and below it.
-	float lip_w = smoothstep(0.34, 0.2, ax);
-	h += 0.07 * exp(-pow((p.y + 0.46) / 0.04, 2.0)) * lip_w + 0.06 * exp(-pow((p.y + 0.6) / 0.05, 2.0)) * lip_w;
-	h -= 0.2 * exp(-pow((p.y + 0.525) / 0.022, 2.0)) * lip_w;
-	return max(h, 0.0);
+const float FACE_DEPTH = 0.42;
+const int FACE_STEPS = 12;
+
+// How thick the mist is at q, and (in `feature`) how close q is to an eye or the mouth.
+float face_mist(vec3 q, out float wisp) {
+	float w = 0.74 * (1.0 - 0.32 * smoothstep(0.1, -1.0, q.y));
+	// Pull it about first, so no two parts of its outline match.
+	vec3 pull = vec3(sky_noise(q * 1.4 + 31.0), sky_noise(q * 1.4 + 57.0), 0.5) - 0.5;
+	vec3 c = q + pull * 0.4;
+	wisp = sky_fbm(c * vec3(3.2, 3.2, 1.3) + vec3(4.0, 9.0, 1.0));
+	float r = length(vec3(q.x / w, q.y, q.z / FACE_DEPTH));
+	// No edge anywhere: it frays out into the dark in long ragged strands.
+	float body = 1.0 - smoothstep(0.25, 1.15, r + (wisp - 0.5) * 1.3);
+	float fine = sky_fbm(c * vec3(11.0, 11.0, 3.0) + wisp * 2.0);
+	return body * (0.1 + 0.9 * smoothstep(0.36, 0.68, wisp * 0.6 + fine * 0.4));
 }
 
-// What the face does to the sky along `d`. `right`, `up` and `towards` are its axes as seen
-// from where you stand (`towards` points at the middle of it), `span` is half the angle it
-// spans, chin to crown. Returns the light it adds in rgb and how much of the sky behind it
-// survives in a. `bend` is how far the stars behind it are pushed aside (add to `d`).
-vec4 devourer(vec3 d, vec3 right, vec3 up, vec3 towards, float span, out vec3 bend) {
-	bend = vec3(0.0);
-	if (span <= 0.0) {
+// The hollows: 1 inside an eye or the mouth, 0 outside. `mouth` is 0 shut .. 1 gaping.
+float face_hollow(vec3 q, float mouth, float wisp, out float near_it) {
+	float ax = abs(q.x);
+	// Eyes: deep sockets, a little heavier at the outer corners.
+	vec2 e = vec2(ax - 0.27, q.y - 0.13 - 0.16 * (ax - 0.27));
+	float eye = exp(-pow(e.x / 0.115, 2.0) - pow(e.y / 0.062, 2.0));
+	// Mouth: a thin line when shut. The jaw drops as it opens.
+	float tall = mix(0.012, 0.27, mouth);
+	float wide = mix(0.3, 0.25, mouth);
+	vec2 m = vec2(q.x / wide, (q.y + 0.5 + 0.13 * mouth) / tall);
+	float gape = exp(-pow(dot(m, m), 1.5)) * (0.45 + 0.55 * mouth);
+	// Ragged, like everything else about it.
+	float any = max(eye, gape) + (wisp - 0.5) * 0.3;
+	// Only the front of the cloud is hollowed: shallow bowls, not tunnels.
+	float front = smoothstep(-0.02, 0.08, q.z) * (1.0 - smoothstep(0.2, 0.34, q.z));
+	near_it = smoothstep(0.0, 0.6, any) * front;
+	return smoothstep(0.3, 0.85, any) * front;
+}
+
+// What it does to the sky along `d`. `center` is the middle of it as seen from where you
+// stand, in half-heights; `right`, `up` and `normal` are its own fixed axes (normal = out of
+// its face). `mouth` is 0 shut .. 1 open. Returns the light it adds in rgb and how much of the
+// sky behind it survives in a.
+vec4 devourer(vec3 d, vec3 center, vec3 right, vec3 up, vec3 normal, float mouth) {
+	// Cheap test first: a ball around the whole thing.
+	float along = dot(center, d);
+	float miss2 = dot(center, center) - along * along;
+	const float REACH = 1.45;
+	if (miss2 > REACH * REACH) {
 		return vec4(0.0, 0.0, 0.0, 1.0);
 	}
-	float ang = acos(clamp(dot(d, towards), -1.0, 1.0));
-	if (ang > span * 1.9) {
+	float chord = sqrt(REACH * REACH - miss2);
+	float t0 = max(along - chord, 0.0);
+	float t1 = along + chord;
+	// Then the slab it lives in.
+	vec3 o = -vec3(dot(center, right), dot(center, up), dot(center, normal));
+	vec3 dl = vec3(dot(d, right), dot(d, up), dot(d, normal));
+	float thick = FACE_DEPTH * 1.25;
+	if (abs(dl.z) > 1.0e-5) {
+		float a = (-thick - o.z) / dl.z;
+		float b = (thick - o.z) / dl.z;
+		t0 = max(t0, min(a, b));
+		t1 = min(t1, max(a, b));
+	} else if (abs(o.z) > thick) {
 		return vec4(0.0, 0.0, 0.0, 1.0);
 	}
-	vec2 plane = vec2(dot(d, right), dot(d, up));
-	vec2 p = plane / max(length(plane), 1.0e-5) * (ang / span);
-	float h = face_relief(p);
-	float eps = 0.012;
-	float hx = face_relief(p + vec2(eps, 0.0)) - face_relief(p - vec2(eps, 0.0));
-	float hy = face_relief(p + vec2(0.0, eps)) - face_relief(p - vec2(0.0, eps));
-	vec3 n = normalize(vec3(-hx, -hy, eps * 2.0 * 1.6));
-	// It has no edge. Its features rise out of the dark and the rest of it is lost in the
-	// stars: brow, eyes, nose and mouth are clear, crown and jaw dissolve raggedly.
-	float pits = sky_fbm(vec3(p * 7.0, 3.0)) * 0.6 + sky_fbm(vec3(p * 31.0, 7.0)) * 0.4;
-	float w = 0.7 * (1.0 - 0.3 * smoothstep(0.1, -1.0, p.y));
-	float rim = sqrt((p.x * p.x) / (w * w) + p.y * p.y);
-	float there = 1.0 - smoothstep(0.5, 1.0, rim + (pits - 0.5) * 0.5);
-	// Space bends around it: the stars behind are pushed off the high ground.
-	bend = (right * hx + up * hy) * span * 1.2 * there;
-	// Lit from above and to one side by nothing in particular. It is made of the same thin
-	// dust and starlight as the rest of the sky, only heaped into a shape.
-	float lit = max(dot(n, normalize(vec3(-0.45, 0.6, 0.66))), 0.0);
-	vec3 dust = mix(vec3(0.3, 0.42, 0.8), vec3(0.6, 0.42, 0.72), sky_fbm(vec3(p * 2.5, 19.0)));
-	vec3 stone = dust * (0.004 + 0.07 * pow(lit, 1.7)) * (0.35 + 1.3 * pits);
-	// The hollows: eyes and the line of the mouth. Nothing comes back from there.
-	float ax = abs(p.x);
-	float socket = exp(-pow((ax - 0.27) / 0.15, 2.0) - pow((p.y - 0.1) / 0.075, 2.0));
-	float mouth = exp(-pow((p.y + 0.525) / 0.02, 2.0)) * smoothstep(0.34, 0.2, ax);
-	float hollow = clamp(smoothstep(0.35, 0.8, socket) + smoothstep(0.4, 0.9, mouth), 0.0, 1.0);
-	stone *= 1.0 - hollow;
-	// Far down in each eye, something very small and very old is still alight.
-	float ember = exp(-(pow(ax - 0.27, 2.0) + pow(p.y - 0.1, 2.0)) / 0.00005);
-	stone += vec3(0.7, 0.8, 1.0) * ember * 0.1;
-	// Stars survive on the lit ridges, as if it were made of them, and are gone in its shadows.
-	// Around it the sky itself is worn thin.
-	float halo = 1.0 - smoothstep(0.8, 1.9, ang / span + (pits - 0.5) * 0.5);
-	float survive = (1.0 - there * (0.9 - 0.55 * pow(lit, 1.5))) * (1.0 - hollow * there) * (1.0 - 0.4 * halo * (1.0 - there));
-	return vec4(stone * there, survive);
+	if (t1 <= t0) {
+		return vec4(0.0, 0.0, 0.0, 1.0);
+	}
+	float dt = (t1 - t0) / float(FACE_STEPS);
+	float t = t0 + dt * sky_hash(d * 913.0 + 3.0);
+	float through = 1.0;
+	vec3 light = vec3(0.0);
+	// Its features are set into the front of it. Looking across it or from behind, the mist
+	// in the way hides them.
+	float facing = smoothstep(0.1, 0.6, -dl.z);
+	for (int i = 0; i < FACE_STEPS; i++) {
+		vec3 q = o + dl * t;
+		t += dt;
+		float wisp;
+		float near_it;
+		float mist = face_mist(q, wisp);
+		float hollow = face_hollow(q, mouth, wisp, near_it) * facing;
+		near_it *= facing;
+		// In the hollows there is no mist, and nothing behind them comes back.
+		mist *= 1.0 - near_it;
+		float void_here = hollow * 14.0;
+		float seen = 1.0 - exp(-mist * 3.2 * dt);
+		// Cold, faint, a little warmer deep inside. The rims of the hollows catch more of it.
+		vec3 tint = mix(vec3(0.28, 0.4, 0.85), vec3(0.62, 0.4, 0.75), wisp);
+		float rim = near_it * (1.0 - near_it) * 4.0;
+		light += through * seen * tint * (0.075 + 0.1 * rim);
+		// Far down in each eye something very small and very old is still alight, and when
+		// the mouth is open there is a dull red a long way down its throat.
+		vec2 pupil = vec2(abs(q.x) - 0.27, q.y - 0.13);
+		float ember = exp(-dot(pupil, pupil) / 0.0004 - pow((q.z - 0.1) / 0.07, 2.0));
+		vec2 gullet = vec2(q.x, q.y + 0.5 + 0.13 * mouth) / vec2(0.16, 0.17);
+		float throat = exp(-dot(gullet, gullet) * 2.0) * mouth * mouth * smoothstep(0.1, 0.0, abs(q.z));
+		light += through * (vec3(0.7, 0.8, 1.0) * ember * 0.6 * facing + vec3(0.55, 0.06, 0.04) * throat * 0.12 * facing) * dt;
+		through *= exp(-(mist * 2.6 + void_here) * dt);
+	}
+	// Even thin mist takes the faint stars. Thick mist takes nearly all of them.
+	return vec4(light, through);
 }

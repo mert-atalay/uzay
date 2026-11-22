@@ -70,6 +70,9 @@ var face_direction := Vector3.FORWARD
 var face_up := Vector3.UP
 var face_half := 0.0
 var face_range := INF
+## 0 shut .. 1 open: it opens its mouth only when a world is about to go.
+var face_mouth := 0.0
+var _face_center := Vector3.ZERO
 ## The opening: seconds since the game began (-1 once it is over), and 0..1 for the title.
 var intro_t := -1.0
 var intro_title := 0.0
@@ -375,24 +378,30 @@ func _update_devourer() -> void:
 		face_half = 0.0
 		face_range = INF
 		sky_m.set_shader_parameter("face_half", 0.0)
-		stars.set_face(Vector3.RIGHT, Vector3.UP, Vector3.BACK, 0.0)
+		stars.set_face(Vector3.RIGHT, Vector3.UP, Vector3.BACK, Vector3.BACK * 9.0, 0.0, 0.0)
 		_face_to_air(0.0)
 		return
 	var rel := StoryMath.face_position(story.time).sub(player.pos)
 	face_range = rel.length()
 	face_direction = rel.normalized().to_vector3()
-	face_up = StoryMath.face_up(face_direction)
+	face_up = StoryMath.face_up()
 	face_half = StoryMath.half_angle(face_range)
+	face_mouth = StoryMath.mouth_open(story.time)
+	# It is fixed in space: its own axes, and where its middle is from here in half-heights.
+	_face_center = rel.scaled(2.0 / StoryMath.HEIGHT).to_vector3()
 	# The sky shaders work in the sky's own frame.
 	var to_sky := _sky_basis.inverse()
-	var towards := to_sky * face_direction
+	var right := to_sky * StoryMath.face_right()
 	var up := to_sky * face_up
-	var right := up.cross(towards)
+	var normal := to_sky * StoryMath.face_normal()
+	var center := to_sky * _face_center
 	sky_m.set_shader_parameter("face_right", right)
 	sky_m.set_shader_parameter("face_up", up)
-	sky_m.set_shader_parameter("face_towards", towards)
+	sky_m.set_shader_parameter("face_normal", normal)
+	sky_m.set_shader_parameter("face_center", center)
+	sky_m.set_shader_parameter("face_mouth", face_mouth)
 	sky_m.set_shader_parameter("face_half", face_half)
-	stars.set_face(right, up, towards, face_half)
+	stars.set_face(right, up, normal, center, face_mouth, face_half)
 	_face_to_air(face_half)
 	if is_gone("sun"):
 		star_energy = 0.05
@@ -403,9 +412,11 @@ func _face_to_air(half: float) -> void:
 	for id in bodies:
 		for m: ShaderMaterial in _materials_of(bodies[id]):
 			if m.shader == BodyVisuals.ATMO_SHADER:
-				m.set_shader_parameter("face_right", face_up.cross(face_direction))
+				m.set_shader_parameter("face_right", StoryMath.face_right())
 				m.set_shader_parameter("face_up", face_up)
-				m.set_shader_parameter("face_towards", face_direction)
+				m.set_shader_parameter("face_normal", StoryMath.face_normal())
+				m.set_shader_parameter("face_center", _face_center)
+				m.set_shader_parameter("face_mouth", face_mouth)
 				m.set_shader_parameter("face_half", half)
 
 

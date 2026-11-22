@@ -26,10 +26,10 @@ const AFTER_OPENING := "There it is. Everyone I have ever met is underneath that
 ## known it was coming for weeks: you are out here looking for a way to stop it, with no idea
 ## what that could be. Nothing here may ever say where to look.
 const LINES := [
-	[55.0, "self", "No ship. No body. A face, cut into the sky itself, and wider than everything the Sun holds."],
-	[120.0, "dispatch", "Forty days and it has not changed speed. It does not turn toward anything we send. We are not being attacked, EVA One. We are in the way."],
+	[55.0, "self", "No ship. No body. A cloud with a face in it, wider than everything the Sun holds. You have to look for the eyes. Then you cannot stop seeing them."],
+	[120.0, "dispatch", "Forty days and it has not changed speed. It does not turn its head for anything we send. We are not being attacked, EVA One. We are in the way."],
 	[190.0, "dispatch", "We are keeping its range on your visor. I am not sure why. So that someone is counting, I suppose."],
-	[246.0, "dispatch", "Pluto is gone. No debris, no flash. It was there, and then the sky closed over the place where it was."],
+	[246.0, "dispatch", "Pluto is gone. It opened its mouth, that was all. No debris, no flash. Then it closed again, as if nothing had been there."],
 	[330.0, "self", "It does not break things. It unmakes them. Even the dark around it is the wrong kind of dark."],
 	[426.0, "dispatch", "Neptune. Eleven minutes of telemetry, then nothing. It is not hurrying. It does not need to."],
 	[520.0, "dispatch", "They asked me what you are looking for out there. I said you would know it when you saw it. Tell me I was not lying."],

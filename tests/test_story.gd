@@ -38,8 +38,29 @@ func test_it_is_bigger_than_anything_else_in_the_sky() -> void:
 	check(StoryMath.HEIGHT > 60.0 * AU, "wider than Neptune's orbit")
 
 
-func test_face_up_is_square_to_the_line_of_sight() -> void:
-	for towards: Vector3 in [StoryMath.DIRECTION.normalized(), Vector3.UP, Vector3(0.3, -0.8, 0.52).normalized()]:
-		var up := StoryMath.face_up(towards)
-		check_near(up.length(), 1.0, 1e-4, "unit up")
-		check_near(up.dot(towards), 0.0, 1e-4, "square to the view")
+func test_its_face_is_fixed_and_looks_at_the_sun() -> void:
+	var n := StoryMath.face_normal()
+	var up := StoryMath.face_up()
+	var right := StoryMath.face_right()
+	check_near(n.length(), 1.0, 1e-4, "unit normal")
+	check_near(up.length(), 1.0, 1e-4, "unit up")
+	check_near(up.dot(n), 0.0, 1e-4, "up square to the normal")
+	check_near(right.dot(n), 0.0, 1e-4, "right square to the normal")
+	check_near(right.cross(up).dot(n), 1.0, 1e-4, "right-handed")
+	# From its middle, the Sun is straight out of its face at any time.
+	for t: float in [0.0, 700.0, StoryMath.end_time()]:
+		var to_sun := StoryMath.face_position(t).scaled(-1.0).normalized().to_vector3()
+		check_near(to_sun.dot(n), 1.0, 1e-4, "faces the Sun (t=%d)" % int(t))
+
+
+func test_its_mouth_opens_only_when_a_world_is_about_to_go() -> void:
+	check_near(StoryMath.mouth_open(0.0), 0.0, 1e-6, "shut at the start")
+	for i in StoryMath.EAT_TIMES.size():
+		var e := StoryMath.EAT_TIMES[i]
+		check_near(StoryMath.mouth_open(e), 1.0, 1e-6, "wide open as world %d goes" % i)
+		check(StoryMath.mouth_open(e - 20.0) > 0.2, "already opening before world %d" % i)
+		check_near(StoryMath.mouth_open(e - StoryMath.MOUTH_OPENS - 1.0), 0.0, 1e-6, "shut before world %d" % i)
+		check_near(StoryMath.mouth_open(e + StoryMath.MOUTH_CLOSES + 1.0), 0.0, 1e-6, "shut again after world %d" % i)
+	for step in 400:
+		var m := StoryMath.mouth_open(StoryMath.end_time() * step / 399.0)
+		check(m >= 0.0 and m <= 1.0, "between shut and open (%d)" % step)

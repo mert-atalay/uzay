@@ -21,6 +21,8 @@ var _tess := -1.0
 var _leave := false
 var _fp := false
 var _story := -1.0
+## Degrees round the Devourer from straight in front of it (180 = behind); < 0 = stay put.
+var _around := -1.0
 var _ending := -1.0
 var _intro := -1.0
 var _choose := -1
@@ -48,6 +50,7 @@ func _ready() -> void:
 			"leave": _leave = true
 			"fp": _fp = true
 			"story": _story = float(kv[1])
+			"around": _around = float(kv[1])
 			"ending": _ending = float(kv[1])
 			"intro": _intro = float(kv[1])
 			"choose": _choose = int(kv[1])
@@ -80,6 +83,9 @@ func _process(_delta: float) -> void:
 	if _count == 8 and OS.get_environment("UZAY_DUMP") != "":
 		_dump(get_parent(), 0)
 	var sv := get_parent() as SpaceView
+	if _around >= 0.0 and _count == 3:
+		var out := StoryMath.face_normal().rotated(StoryMath.face_up(), deg_to_rad(_around))
+		sv.player.pos = StoryMath.face_position(sv.story.time).add(DVec3.from_vector3(out).scaled(StoryMath.HEIGHT * 0.9))
 	if look_at_body == "devourer" and _count >= 4:
 		sv.player.transform.basis = Basis.looking_at(sv.face_direction, sv.face_up)
 	if _intro >= 0.0 and _count == 3:

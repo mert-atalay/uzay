@@ -40,12 +40,13 @@ Sagittarius A*. The plan and design pillars live in the project's plan doc; the 
   `src/game/surface_rocks.gd` (rocks hashed per cell on the cube face) add detail near the ground.
 - Story (the reason to play): `src/sim/story_math.gd` (how far the Devourer is, how much sky it spans, which
   worlds are gone: pure maths, real seconds of play) and `src/game/story.gd` (clock, the dispatch / inner-voice
-  lines, tesseract choices). The Devourer is a face hundreds of AU tall carved into the sky: `devourer()` in
-  `sky.gdshaderinc`, used by the sky, the star points and (so it shows through daylight) `atmosphere.gdshader`.
-  It is indifferent: it never chases or eats the player. Eaten bodies are hidden and skipped via
+  lines, tesseract choices). The Devourer is a cloud hundreds of AU tall with a face in it, fixed in space
+  (it never turns to the player; from behind it is only mist): `devourer()` in `sky.gdshaderinc` marches each
+  ray through it, used by the sky, the star points and (so it shows through daylight) `atmosphere.gdshader`.
+  Its mouth opens only before a world goes (`StoryMath.mouth_open`). It never chases or eats the player. Eaten bodies are hidden and skipped via
   `SpaceView.is_gone`. The game opens with `SpaceView.begin_intro` (title, Dispatch, your head turned to it).
   Three windows in the tesseract (`Tesseract.update_choices`): only THEN saves the world and starts
-  `src/game/ending.gd` (rescue ship `rescue_ship.gd`, drawn in the astronaut's SubViewport, so its
+  `src/game/ending.gd` (rescue ship `rescue_ship.gd`, a CC BY model in `assets/models/rescue_ship.glb`, drawn in the astronaut's SubViewport, so its
   see-through materials must be premultiplied-alpha, never additive). The game must never tell the player
   to enter the black hole: no hints in text or UI. `half` and `flat` are reserved words in shaders.
 - Camera auto-exposure: in Godot a *higher* sensitivity limit means a *darker* picture (`player.gd`).
@@ -82,7 +83,7 @@ Screenshots without a monitor (e.g. in a cloud container), using the real Forwar
 ```sh
 VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json xvfb-run -a -s "-screen 0 1600x900x24" \
   godot --resolution 1600x900 -- capture=/tmp/shot.png frames=30 altitude=400000 look=sun
-# env UZAY_HIDE=Astronaut,Sky hides nodes, UZAY_DUMP=1 lists what is visible. other capture args: goto=<body id> yaw=<deg> menu=1 fall=<seconds into the fall> tesseract=<seconds> leave=1 pitch=<deg up from straight down> walk=1 heat=<0..1> fp=1 (first person) story=<seconds> look=devourer intro=<seconds> ending=<seconds> choose=<0..2>
+# env UZAY_HIDE=Astronaut,Sky hides nodes, UZAY_DUMP=1 lists what is visible. other capture args: goto=<body id> yaw=<deg> menu=1 fall=<seconds into the fall> tesseract=<seconds> leave=1 pitch=<deg up from straight down> walk=1 heat=<0..1> fp=1 (first person) story=<seconds> look=devourer around=<deg round it, 180 = behind> intro=<seconds> ending=<seconds> choose=<0..2>
 ```
 
 Scripts loaded by a `-s` script can't see autoloads, so anything using `Universe` must run inside the

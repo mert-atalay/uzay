@@ -47,8 +47,10 @@ func set_brightness(b: float) -> void:
 
 ## The Devourer's face, which covers the stars behind it (axes in the sky frame, half-angle
 ## in radians, 0 = not here).
-func set_face(right: Vector3, up: Vector3, towards: Vector3, half: float) -> void:
+func set_face(right: Vector3, up: Vector3, normal: Vector3, center: Vector3, mouth: float, half: float) -> void:
 	_material.set_shader_parameter("face_right", right)
 	_material.set_shader_parameter("face_up", up)
-	_material.set_shader_parameter("face_towards", towards)
+	_material.set_shader_parameter("face_normal", normal)
+	_material.set_shader_parameter("face_center", center)
+	_material.set_shader_parameter("face_mouth", mouth)
 	_material.set_shader_parameter("face_half", half)
