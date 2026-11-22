@@ -60,8 +60,8 @@ func _ready() -> void:
 	eye.auto_exposure_enabled = true
 	eye.auto_exposure_scale = 0.22
 	eye.auto_exposure_speed = 1.2
-	eye.auto_exposure_min_sensitivity = 35.0
-	eye.auto_exposure_max_sensitivity = 170.0
+	eye.auto_exposure_min_sensitivity = 110.0
+	eye.auto_exposure_max_sensitivity = 600.0
 	camera.attributes = eye
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 

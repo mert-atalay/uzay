@@ -52,12 +52,20 @@ var entry_heat := 0.0
 var _body_light: Dictionary = {} # id -> [direction to the star, energy]
 var _prev_time := 0.0
 
+var clouds: CloudLayer
+var rocks: SurfaceRocks
 var _tesseract_origin := DVec3.new()
 var _shake_time := 0.0
 
 
 func _ready() -> void:
 	_setup_sky()
+	clouds = CloudLayer.new()
+	clouds.name = "Clouds"
+	add_child(clouds)
+	rocks = SurfaceRocks.new()
+	rocks.name = "Rocks"
+	add_child(rocks)
 	plunge.phase_changed.connect(_on_plunge_phase)
 	_build_system(player.system_id)
 	_place_player_near(start_body, start_altitude_m)
@@ -65,6 +73,10 @@ func _ready() -> void:
 		if arg.begins_with("capture="):
 			var cap: Node = load("res://tools/capture_node.gd").new()
 			add_child(cap)
+
+
+func _set_sky_dim(dim: float) -> void:
+	(sky.material_override as ShaderMaterial).set_shader_parameter("brightness", SKY_BRIGHTNESS * (1.0 - 0.97 * dim))
 
 
 func _setup_sky() -> void:
@@ -354,6 +366,9 @@ func _update_entry_heat(b: Dictionary, sea_altitude: float) -> void:
 func _update_terrain() -> void:
 	if ground.is_empty():
 		terrain.hide_patch()
+		clouds.hide_layer()
+		rocks.hide_rocks()
+		_set_sky_dim(0.0)
 		return
 	var b: Dictionary = ground["body"]
 	var center: DVec3 = ground["center"]
@@ -366,6 +381,21 @@ func _update_terrain() -> void:
 	terrain.place(b, ground["fixed_up"], func(v: DVec3) -> DVec3: return BodyFrame.to_world(v, tilt, angle),
 		rel.scaled(1.0 - radius / d).to_vector3(), ground["sea_altitude"] - ground["height"], ground["sea_altitude"],
 		light[0], star_color, light[1])
+	# Daylight in thick air drowns out the stars.
+	var atmo: Variant = b["atmosphere"]
+	var up := rel.scaled(-1.0 / d).to_vector3()
+	if atmo != null and atmo["density"] >= 0.1:
+		var air := clampf(float(atmo["density"]), 0.0, 1.0) * exp(-maxf(ground["sea_altitude"], 0.0) / 12000.0)
+		_set_sky_dim(air * smoothstep(-0.1, 0.1, up.dot(light[0])))
+	else:
+		_set_sky_dim(0.0)
+	rocks.place(b, terrain.field, ground["fixed_up"], radius + ground["sea_altitude"],
+		func(v: DVec3) -> DVec3: return BodyFrame.to_world(v, tilt, angle),
+		ground["sea_altitude"] - ground["height"], light[0], star_color, light[1])
+	var to_world := func(x: float, y: float, z: float) -> Vector3:
+		return BodyFrame.to_world(DVec3.new(x, y, z), tilt, angle).to_vector3()
+	clouds.place(b, Basis(to_world.call(1.0, 0.0, 0.0), to_world.call(0.0, 1.0, 0.0), to_world.call(0.0, 0.0, 1.0)),
+		rel.scaled(-1.0 / d).to_vector3(), ground["sea_altitude"], space.far * 0.9, light[0], star_color, light[1])
 
 
 ## A black hole pulls you in. Outside the horizon it is a drift you can fight; once you cross,

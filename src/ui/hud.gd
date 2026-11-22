@@ -38,8 +38,8 @@ func _ready() -> void:
 	(space_view.get_node("Plunge") as Plunge).phase_changed.connect(_on_plunge_phase)
 
 
-const HELP_KEYS := "B black hole · N Earth · J warp to what you look at · Tab travel menu · WASD move · Space/Ctrl up/down · Q/E roll · mouse look · Shift boost · scroll or [ ] throttle · T time speed · V view · H markers · M music · F11 window · Esc free mouse"
-const HELP_PAD := "D-pad right black hole · D-pad left Earth · X warp to what you look at · Start travel menu · left stick move · A up / jump · B or LT down · right stick look · LB/RB roll · RT boost · D-pad up/down throttle · R3 view · Y markers · Back time speed"
+const HELP_KEYS := "F12 screenshot · B black hole · N Earth · J warp to what you look at · Tab travel menu · WASD move · Space/Ctrl up/down · Q/E roll · mouse look · Shift boost · scroll or [ ] throttle · T time speed · V view · H markers · M music · F11 window · Esc free mouse"
+const HELP_PAD := "L3 screenshot · D-pad right black hole · D-pad left Earth · X warp to what you look at · Start travel menu · left stick move · A up / jump · B or LT down · right stick look · LB/RB roll · RT boost · D-pad up/down throttle · R3 view · Y markers · Back time speed"
 
 
 func _input(event: InputEvent) -> void:
@@ -48,12 +48,39 @@ func _input(event: InputEvent) -> void:
 		_set_pad(true)
 	elif event is InputEventKey:
 		_set_pad(false)
+	if event.is_action_pressed("screenshot"):
+		_save_screenshot()
 	if event.is_action_pressed("fullscreen"):
 		var full := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if full else DisplayServer.WINDOW_MODE_FULLSCREEN)
 
 
 var _using_pad := false
+var _shot_note_until := 0.0
+
+
+## Saves what is on screen to a "screenshots" folder next to the game (handy for showing a
+## problem exactly as it looked).
+func _save_screenshot() -> void:
+	await RenderingServer.frame_post_draw
+	var img := get_viewport().get_texture().get_image()
+	var dir := OS.get_executable_path().get_base_dir().path_join("screenshots")
+	if OS.has_feature("editor") or DirAccess.make_dir_recursive_absolute(dir) != OK:
+		dir = OS.get_user_data_dir()
+	var p := space_view.player
+	var name := "uzay-%s-%s.png" % [Time.get_datetime_string_from_system().replace(":", "").replace("T", "-"), p.nearest_body_id]
+	var notes := FileAccess.open(dir.path_join(name.get_basename() + ".txt"), FileAccess.WRITE)
+	if notes != null:
+		notes.store_string("gpu=%s\nfps=%d\nwindow=%s\nbody=%s altitude=%.1f speed=%.1f mode=%d\nphase=%d heat=%.2f warp=%.2f\n" % [
+			RenderingServer.get_video_adapter_name(), Engine.get_frames_per_second(), DisplayServer.window_get_size(),
+			p.nearest_body_id, p.nearest_altitude, p.velocity.length(), p.mode,
+			space_view.plunge.phase, space_view.entry_heat, space_view.warp_amount])
+	if img.save_png(dir.path_join(name)) == OK:
+		_shot_note_until = Time.get_ticks_msec() / 1000.0 + 2.0
+		info_note = "Screenshot saved"
+
+
+var info_note := ""
 
 
 ## Show the hints for whatever the player is holding, and name the controller so it is plain
@@ -155,6 +182,8 @@ func _process(_delta: float) -> void:
 		Fmt.speed(p.velocity.length()), p.throttle,
 		Fmt.time_scale(Universe.time_scale), Engine.get_frames_per_second(),
 	]
+	if Time.get_ticks_msec() / 1000.0 < _shot_note_until:
+		info.text += "\n" + info_note
 	if marker_layer.visible:
 		_update_markers()
 

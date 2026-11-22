@@ -26,6 +26,10 @@ void vertex() {
 	mat4 inv = inverse(MODEL_MATRIX);
 	cam_obj = (inv * vec4(CAMERA_POSITION_WORLD, 1.0)).xyz;
 	sun_obj = normalize(mat3(inv) * sun_dir_world);
+	// Standing on the ground the far plane is only ~100 km away, but the top of the air towards
+	// the horizon is over 1000 km off: pin the shell to the far plane so it is never clipped.
+	POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));
+	POSITION.z = POSITION.w * 1.0e-6;
 }
 
 vec2 ray_sphere(vec3 o, vec3 d, float r) {

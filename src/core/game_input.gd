@@ -51,6 +51,8 @@ func _enter_tree() -> void:
 	_button("jump_home", JOY_BUTTON_DPAD_LEFT)
 	_axis("move_down", JOY_AXIS_TRIGGER_LEFT, 1.0)
 	_key("fullscreen", [KEY_F11])
+	_key("screenshot", [KEY_F12, KEY_P])
+	_button("screenshot", JOY_BUTTON_LEFT_STICK)
 
 
 func _ensure(action: String) -> void:

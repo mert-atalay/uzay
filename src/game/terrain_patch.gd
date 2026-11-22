@@ -136,7 +136,7 @@ func place(b: Dictionary, fixed_up: DVec3, to_world: Callable, render_up_point: 
 	m.set_shader_parameter("sun_color", light_color)
 	m.set_shader_parameter("sun_energy", light_energy)
 	m.set_shader_parameter("cloud_shift", Universe.sim_time * 2.0e-6)
-	m.set_shader_parameter("cloud_amount", smoothstep(8000.0, 60000.0, sea_altitude))
+	m.set_shader_parameter("cloud_amount", smoothstep(CloudLayer.FADE_START, CloudLayer.FADE_END, sea_altitude))
 	var x: Vector3 = (to_world.call(east) as DVec3).to_vector3()
 	var y: Vector3 = (to_world.call(fixed_up) as DVec3).to_vector3()
 	var z: Vector3 = (to_world.call(north) as DVec3).to_vector3()
