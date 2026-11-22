@@ -7,6 +7,7 @@ extends CanvasLayer
 ## own, rendered by a second camera and laid over the main view. Sun direction and colour are
 ## copied from the real scene each frame so the suit is lit by the star you are actually near.
 
+const MODEL_PATH := "res://assets/models/astronaut.glb"
 const CAMERA_OFFSET := Vector3(0.0, -1.05, -4.4) # where the astronaut sits in front of the camera
 
 @export var space_view_path: NodePath
@@ -56,7 +57,10 @@ func _ready() -> void:
 	_body = Node3D.new()
 	_body.position = CAMERA_OFFSET
 	_viewport.add_child(_body)
-	_build_suit()
+	if ResourceLoader.exists(MODEL_PATH):
+		_build_model()
+	else:
+		_build_suit()
 
 	var rect := TextureRect.new()
 	rect.texture = _viewport.get_texture()
@@ -160,6 +164,31 @@ func _ball(radius: float) -> SphereMesh:
 	s.radius = radius
 	s.height = radius * 2.0
 	return s
+
+
+## The modelled astronaut (Poly by Google, CC BY), turned to face away from the camera, with
+## the two jetpack flames added at the pack.
+func _build_model() -> void:
+	var model := (load(MODEL_PATH) as PackedScene).instantiate() as Node3D
+	model.position = Vector3(0.0, -1.0, 0.0) # the model's origin is at its feet
+	model.rotation.y = PI
+	_body.add_child(model)
+	_flame_material = StandardMaterial3D.new()
+	_flame_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_flame_material.albedo_color = Color(0.55, 0.8, 1.0, 0.7)
+	_flame_material.emission_enabled = true
+	_flame_material.emission = Color(0.5, 0.78, 1.0)
+	_flame_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	for side: float in [-1.0, 1.0]:
+		var flame := CylinderMesh.new()
+		flame.top_radius = 0.05
+		flame.bottom_radius = 0.0
+		flame.height = 0.3
+		var holder := MeshInstance3D.new()
+		holder.position = Vector3(side * 0.17, -0.28, 0.3)
+		_body.add_child(holder)
+		_part(holder, flame, _flame_material, Vector3(0.0, -0.15, 0.0))
+		_flames.append(holder)
 
 
 ## A space suit from simple shapes. The astronaut faces away from the camera (-Z), so the

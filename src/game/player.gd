@@ -52,6 +52,15 @@ func _ready() -> void:
 	# Move before SpaceView places the world around us, so nothing lags a frame behind.
 	process_priority = -10
 	camera.fov = 70.0
+	# Eyes that adapt: a sunlit planet filling the view dims the picture, deep space opens it up
+	# so the Milky Way comes out. The limits keep space dark and stop planets blowing out.
+	var eye := CameraAttributesPractical.new()
+	eye.auto_exposure_enabled = true
+	eye.auto_exposure_scale = 0.22
+	eye.auto_exposure_speed = 1.2
+	eye.auto_exposure_min_sensitivity = 35.0
+	eye.auto_exposure_max_sensitivity = 170.0
+	camera.attributes = eye
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 

@@ -47,6 +47,8 @@ uniform float haze_density = 0.0; // 1 / metres, already thinned for your altitu
 varying vec2 ground_xy;
 varying vec3 sun_obj;
 varying float view_dist;
+varying vec3 pos_obj;
+varying vec3 cam_obj;
 
 // Cubic B-spline lookup of the noise tile: value in x, and its slope along both tile axes
 // (per unit of tile coordinate) in yz. Smooth to the second derivative, so lighting has no
@@ -132,6 +134,8 @@ void vertex() {
 	float s = (1.0 + h / radius) * k;
 	VERTEX = vec3(xy.x * s, h * k + radius * km1, xy.y * s);
 	ground_xy = xy;
+	pos_obj = VERTEX;
+	cam_obj = (inverse(MODEL_MATRIX) * vec4(CAMERA_POSITION_WORLD, 1.0)).xyz;
 	mat3 rot = mat3(normalize(MODEL_MATRIX[0].xyz), normalize(MODEL_MATRIX[1].xyz), normalize(MODEL_MATRIX[2].xyz));
 	sun_obj = transpose(rot) * sun_dir_world;
 	view_dist = length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz) / length(MODEL_MATRIX[0].xyz);
@@ -168,9 +172,19 @@ void fragment() {
 
 	vec3 color = surface * lit;
 	if (has_ocean && land < 0.5) {
-		// Sun glint, taking straight up as the view direction (close enough from low down).
-		vec3 hv = normalize(l + up);
-		color += vec3(1.0, 0.95, 0.85) * pow(max(dot(up, hv), 0.0), 420.0) * 0.7 * day * (1.0 - land * 2.0) * cloud_amount;
+		// Open water: small moving waves, the sky mirrored at glancing angles, and the sun's glitter.
+		float sea = 1.0 - land * 2.0;
+		float wave_fade = 1.0 - smoothstep(300.0, 6000.0, view_dist);
+		vec2 w1 = tile_smooth(xy / 41.0 + vec2(TIME * 0.021, TIME * 0.013)).yz;
+		vec2 w2 = tile_smooth(xy.yx / 9.0 - vec2(TIME * 0.05, TIME * 0.031)).yz;
+		vec3 wn = normalize(up + vec3(w1.x + w2.x, 0.0, w1.y + w2.y) * 0.012 * wave_fade);
+		vec3 v = normalize(cam_obj - pos_obj);
+		float fresnel = 0.02 + 0.98 * pow(1.0 - max(dot(wn, v), 0.0), 5.0);
+		vec3 deep = mix(surface, vec3(0.012, 0.05, 0.11), 0.75 * near_fade);
+		vec3 water = deep * max(dot(wn, l), 0.0) * day;
+		water = mix(water, mix(vec3(0.2, 0.36, 0.62), haze_color, 0.3) * (0.1 + 0.9 * day), fresnel * 0.6);
+		water += vec3(1.0, 0.95, 0.85) * pow(max(dot(wn, normalize(l + v)), 0.0), 260.0) * 2.5 * day;
+		color = mix(color, water, sea);
 	}
 	if (cloud_amount > 0.001) {
 		float cloud = smoothstep(0.08, 0.85, textureGrad(cloud_tex, uv + vec2(cloud_shift, 0.0), gx, gy).r);

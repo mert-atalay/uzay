@@ -90,7 +90,7 @@ func _configure(b: Dictionary) -> void:
 		_material.set_shader_parameter("cloud_tex", BodyVisuals.texture("earth_clouds.jpg"))
 	var atmo: Variant = b["atmosphere"]
 	if atmo != null and atmo["density"] >= 0.1:
-		_material.set_shader_parameter("haze_color", UniverseCatalog.color_of(atmo["horizonColor"]).lerp(Color.WHITE, 0.25))
+		_material.set_shader_parameter("haze_color", UniverseCatalog.color_of(atmo["horizonColor"]).lerp(Color.WHITE, 0.1) * 0.8)
 		_haze = clampf(atmo["density"], 0.1, 3.0) / 90000.0
 	else:
 		_haze = 0.0
