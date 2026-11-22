@@ -32,6 +32,11 @@ var _sky_basis := Basis(Vector3.RIGHT, deg_to_rad(60.2)) * Basis(Vector3.UP, deg
 @onready var plunge: Plunge = $Plunge
 @onready var tesseract: Tesseract = $Tesseract
 
+## Light falling on the player right now (world axes), for the astronaut overlay.
+var star_direction := Vector3.UP
+var star_color := Color.WHITE
+var star_energy := 2.0
+
 var _tesseract_origin := DVec3.new()
 var _shake_time := 0.0
 
@@ -226,6 +231,10 @@ func _on_plunge_phase(phase: Plunge.Phase) -> void:
 func _process_tesseract() -> void:
 	var p := player.pos.sub(_tesseract_origin).to_vector3()
 	tesseract.update(p)
+	# Lit from the strands all around: warm, from above and behind.
+	star_direction = player.global_basis * Vector3(0.3, 0.8, 0.5).normalized()
+	star_color = Color(1.0, 0.7, 0.4)
+	star_energy = 1.1
 	player.nearest_altitude = 14.0 # metres: a gentle drifting pace
 	player.nearest_is_black_hole = false
 	player.camera.near = 0.05
@@ -258,6 +267,10 @@ func _update_lighting(centers: Dictionary) -> void:
 	var color := Color(1.0, 0.62, 0.36) if is_hole else UniverseCatalog.color_of(primary["star_color"], Color.WHITE)
 	# Stars keep most of their colour out of the light: sunlight looks white to an adapted eye.
 	color = color.lerp(Color.WHITE, 0.0 if is_hole else 0.6)
+	if centers.has(primary["id"]):
+		star_direction = centers[primary["id"]].sub(player.pos).normalized().to_vector3()
+	star_color = color
+	star_energy = 1.0 if is_hole else 1.5
 	for id in bodies:
 		var mi: MeshInstance3D = bodies[id]
 		var mats := _materials_of(mi)

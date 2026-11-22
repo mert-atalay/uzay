@@ -24,6 +24,8 @@ var nearest_body_id: String = ""
 var nearest_is_black_hole: bool = false
 ## True while something else is moving the astronaut (the fall into a black hole). You can still look.
 var controls_locked: bool = false
+## This frame's movement input in the astronaut's own axes (x right, y up, z back), length 0..1.
+var thrust_local := Vector3.ZERO
 
 @onready var camera: Camera3D = $Camera3D
 
@@ -75,6 +77,7 @@ func _process(delta: float) -> void:
 	if input.length() > 1.0:
 		input = input.normalized()
 
+	thrust_local = Vector3.ZERO if controls_locked else input
 	if controls_locked:
 		velocity = Vector3.ZERO
 		return

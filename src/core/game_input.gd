@@ -22,6 +22,8 @@ func _enter_tree() -> void:
 	_key("release_mouse", [KEY_ESCAPE])
 	_key("travel_menu", [KEY_TAB])
 	_key("mute", [KEY_M])
+	_key("toggle_view", [KEY_V])
+	_button("toggle_view", JOY_BUTTON_RIGHT_STICK)
 	_button("travel_menu", JOY_BUTTON_START)
 
 	_axis("move_forward", JOY_AXIS_LEFT_Y, -1.0)
