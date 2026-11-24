@@ -23,15 +23,23 @@ var _marker_targets: Dictionary = {} # marker id -> body id to warp to
 ## The soundtrack's peak, timed to land as the tesseract opens.
 const MUSIC_PEAK_SECONDS := 210.0
 const MUSIC_DB := -9.0
+const PRIVATE_THEME := "res://assets/music/private_theme.mp3"
 
 
 func _ready() -> void:
 	travel_menu.space_view = space_view
 	_set_pad(not Input.get_connected_joypads().is_empty())
 	Input.joy_connection_changed.connect(func(_device: int, connected: bool) -> void: _set_pad(connected))
-	var stream := load("res://assets/music/interstellar_main_theme.mp3") as AudioStreamMP3
+	# The game's own theme (tools/make_theme.py). A private build may drop in another track as
+	# assets/music/private_theme.mp3 (not in the repository); it should peak at the same time.
+	var stream: AudioStream = null
+	if ResourceLoader.exists(PRIVATE_THEME):
+		stream = load(PRIVATE_THEME) as AudioStream
+	if stream == null:
+		if ResourceLoader.exists("res://assets/music/theme.ogg"):
+			stream = load("res://assets/music/theme.ogg") as AudioStream
 	if stream != null:
-		stream.loop = true
+		stream.set("loop", true)
 		music.stream = stream
 		music.volume_db = MUSIC_DB
 		music.play()

@@ -8,3 +8,6 @@
 .DS_Store
 Thumbs.db
 *.tmp
+
+# A private soundtrack for personal builds: never committed
+/assets/music/private_theme.mp3*

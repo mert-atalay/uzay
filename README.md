@@ -1,15 +1,62 @@
 # Uzay
 
-A true-scale space exploration game built with [Godot 4.7](https://godotengine.org). Float as an
-astronaut through the real Solar System, travel to nearby stars, and fall into Sagittarius A*.
+**A true-scale space game I made for my daughter.** *Uzay* means "space" in Turkish.
+
+You are an astronaut with a jetpack. The Sun, every planet and the stars around us are where they
+really are and as big as they really are, so you feel as small as you would out there. Fly from
+Earth orbit down to the Moon and walk on it, cross to Saturn, travel to other stars, and fall into
+the black hole at the centre of our galaxy.
+
+![An astronaut floating above the Earth](docs/screenshots/earth.jpg)
+
+| | |
+| --- | --- |
+| ![Saturn and its rings](docs/screenshots/saturn.jpg) | ![The black hole Sagittarius A*](docs/screenshots/black-hole.jpg) |
+| ![The Moon](docs/screenshots/moon.jpg) | ![Jupiter in front of the Milky Way](docs/screenshots/jupiter.jpg) |
+
+## What is in it
+
+- **The real Solar System at 1:1 scale.** Real sizes, real distances, real orbits. Nothing is
+  enlarged to look good.
+- **A real night sky.** About 15,000 stars from the HYG catalogue in their true places and
+  colours, over a photograph of the Milky Way.
+- **No loading screens.** Fly from deep space through the air to the ground and walk away, in one go.
+  Dive too fast and the air burns around you.
+- **Other stars to visit:** Alpha Centauri, Sirius, Vega, TRAPPIST-1, Betelgeuse and more.
+- **A black hole that bends light.** Sagittarius A* is ray-traced with real gravitational lensing.
+  Cross the event horizon and there is no way back.
+- **A story.** Something is coming, and nobody knows how to stop it. The game never tells you what
+  to do about it.
+- **Plays fully on a controller** or on keyboard and mouse.
+
+<details>
+<summary><b>Story spoilers</b> (the game itself never says any of this)</summary>
+
+A cloud wider than the Solar System, with a face in it, is drifting in. It does not notice you.
+It opens its mouth only when a world is about to go, and worlds simply stop being there, outermost
+first (Earth after 27 minutes of play). Earth Dispatch and your own thoughts tell you how close it
+is, and you can see it from every world, even through a daylight sky.
+
+The only way to stop it is inside the black hole. You fall for about a minute, then the tesseract
+opens and, after a while, three windows appear in it. Look at one to read it, then fly into it or
+press Enter / Start / X to reach through. Only one of them saves the world.
+
+![The Devourer](docs/screenshots/devourer.jpg)
+![The tesseract](docs/screenshots/tesseract.jpg)
+![The rescue](docs/screenshots/rescue.jpg)
+
+</details>
 
 ## Play
 
-- **Easiest:** open the latest pull request or Actions run on GitHub, download the `Uzay-Windows`,
-  `Uzay-macOS` or `Uzay-Linux` artifact, unzip and run it. (On macOS the first launch needs
-  right-click → Open, since the build isn't notarized.)
-- **From source:** install Godot 4.7.2, open this folder in the editor (Import → `project.godot`),
-  press F5.
+- **Download:** open the latest run under
+  [Actions](https://github.com/mert-atalay/uzay/actions), download the `Uzay-Windows`, `Uzay-macOS`
+  or `Uzay-Linux` artifact (GitHub asks you to sign in), unzip and run it. On macOS the first
+  launch needs right-click → Open, since the build is not notarized.
+- **From source:** install [Godot 4.7.2](https://godotengine.org), open this folder in the editor
+  (Import → `project.godot`) and press F5.
+
+It needs a graphics card that supports Vulkan.
 
 ## Controls
 
@@ -35,35 +82,38 @@ astronaut through the real Solar System, travel to nearby stars, and fall into S
 The game starts fullscreen. In the travel menu, move with the D-pad or arrows, A / Enter picks a
 destination, B / Esc closes. The bottom-left hint line names the controller the game has found.
 
-**The black hole:** press B to jump next to Sagittarius A*, then hold W. It pulls you in as you get close. Cross the event horizon
-and there is no way back: you fall for about a minute, then the tesseract opens.
+The game starts fullscreen. In the travel menu, move with the D-pad or arrows, A / Enter picks a
+destination, B / Esc closes. The bottom-left hint line names the controller the game has found.
 
-**The story (spoilers, the game itself never says any of this):** a cloud wider than the Solar System, with
-a face in it, is coming. It opens its mouth only when a world is about to go. It does not notice you. Worlds simply stop being there as it nears,
-outermost first (Earth after 27 minutes of play). Earth Dispatch and your own thoughts tell you how close
-it is, and you can see it from every world, even through a daylight sky. The only way to stop it is inside
-the black hole: after a while three windows open in the tesseract. Look at one to read it, then fly into it
-or press Enter / Start / X to reach through. Only one of them saves the world.
+**Flying:** your top speed depends on how far you are from the nearest surface: slow near a
+planet, faster than light in empty space.
 
-**Landing:** fly down to any rocky planet or moon. Dive fast through air and it burns around you.
-Touch the ground and you are on foot: W A S D walk, Shift runs, Space jumps (try the Moon). Hold
-Space to fire the jetpack and fly again.
+**Landing:** fly down to any rocky planet or moon. Touch the ground and you are on foot: W A S D
+walk, Shift runs, Space jumps (try the Moon). Hold Space to fire the jetpack and fly again.
 
-Your top speed depends on how far you are from the nearest surface: slow near a planet, very
-fast in empty space.
+## How it was made
 
-## Status
+It began as a small prototype in Google AI Studio (kept in `prototype-web/` for reference). I
+then rebuilt it from scratch in [Godot 4](https://godotengine.org) and GDScript, working with
+[Claude Code](https://claude.com/claude-code). A few things that make true scale work:
 
-Step 1 of the build plan: project setup, true-scale catalogue, Kepler orbits, floating origin,
-true-scale rendering, and a first flyable scene with placeholder visuals. Next: the feel of space
-(real star catalogue, astronaut, auto-exposure), then the black hole.
+- Positions are 64-bit metres. The player stays at the origin and the universe moves around them.
+- Far objects are pulled in and shrunk about the camera so their size in the sky is unchanged,
+  which lets one camera draw a 2 m astronaut and a star 600 light-years away.
+- The black hole and the Devourer are drawn per pixel by marching rays through curved space and
+  through mist.
+- The simulation (orbits, flight, terrain, story timing) is plain code with headless tests:
+  `godot --headless -s res://tests/run_tests.gd`. Every push is built for Windows, macOS and Linux.
 
-The original AI Studio prototype is kept in `prototype-web/` for reference.
+`CLAUDE.md` has the full map of the code.
 
-## Sky data
+## Credits
 
-The sky is real: the Milky Way panorama comes from [Stellarium](https://github.com/Stellarium/stellarium)
-(GPL) and the stars from the [HYG database](https://github.com/astronexus/HYG-Database) (CC BY-SA).
-`tools/bake_sky.py` turns them into the game's files.
-
-The rescue ship is "Osiris Mothership" by alx_flameniro (Sketchfab, CC BY 4.0).
+- Planet textures: [Solar System Scope](https://www.solarsystemscope.com/textures/) (CC BY 4.0).
+- Milky Way panorama: [Stellarium](https://github.com/Stellarium/stellarium) (GPL).
+- Star catalogue: [HYG database](https://github.com/astronexus/HYG-Database) (CC BY-SA 4.0).
+- Astronaut: Poly by Google (CC BY).
+- Rescue ship: "Osiris Mothership" by alx_flameniro on Sketchfab (CC BY 4.0).
+- Music and the black hole drone are original, synthesised by `tools/make_theme.py` and
+  `tools/make_drone.py`.
+- Engine: [Godot](https://godotengine.org) (MIT).
