@@ -49,10 +49,9 @@ press Enter / Start / X to reach through. Only one of them saves the world.
 
 ## Play
 
-- **Download:** open the latest run under
-  [Actions](https://github.com/mert-atalay/uzay/actions), download the `Uzay-Windows`, `Uzay-macOS`
-  or `Uzay-Linux` artifact (GitHub asks you to sign in), unzip and run it. On macOS the first
-  launch needs right-click → Open, since the build is not notarized.
+- **Download:** get the zip for Windows, macOS or Linux from the
+  [latest release](https://github.com/mert-atalay/uzay/releases/latest), unzip and run it. On macOS
+  the first launch needs right-click → Open, since the build is not notarized.
 - **From source:** install [Godot 4.7.2](https://godotengine.org), open this folder in the editor
   (Import → `project.godot`) and press F5.
 
