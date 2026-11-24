@@ -1,8 +1,13 @@
-node_modules/
-build/
-dist/
-coverage/
+# Godot
+.godot/
+*.translation
+/build/
+/android/
+
+# OS / editor
 .DS_Store
-*.log
-.env*
-!.env.example
+Thumbs.db
+*.tmp
+
+# A private soundtrack for personal builds: never committed
+/assets/music/private_theme.mp3*

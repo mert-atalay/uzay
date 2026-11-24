@@ -1,0 +1,480 @@
+class_name Hud
+extends CanvasLayer
+## Minimal telemetry: nearest body, altitude, speed, throttle, time scale, and on-screen markers.
+
+@export var space_view_path: NodePath
+
+var _markers: Dictionary = {} # id -> Label
+var _markers_visible := true
+
+@onready var space_view := get_node(space_view_path) as SpaceView
+@onready var info: Label = $Info
+@onready var help: Label = $Help
+@onready var marker_layer: Control = $Markers
+@onready var travel_menu: TravelMenu = $TravelMenu
+@onready var music: AudioStreamPlayer = $Music
+@onready var notice: Label = $Notice
+@onready var fade: ColorRect = $Fade
+@onready var heat: ColorRect = $Heat
+@onready var warp: ColorRect = $Warp
+
+var _marker_targets: Dictionary = {} # marker id -> body id to warp to
+
+## The soundtrack's peak, timed to land as the tesseract opens.
+const MUSIC_PEAK_SECONDS := 210.0
+const MUSIC_DB := -9.0
+const PRIVATE_THEME := "res://assets/music/private_theme.mp3"
+
+
+func _ready() -> void:
+	travel_menu.space_view = space_view
+	_set_pad(not Input.get_connected_joypads().is_empty())
+	Input.joy_connection_changed.connect(func(_device: int, connected: bool) -> void: _set_pad(connected))
+	# The game's own theme (tools/make_theme.py). A private build may drop in another track as
+	# assets/music/private_theme.mp3 (not in the repository); it should peak at the same time.
+	var stream: AudioStream = null
+	if ResourceLoader.exists(PRIVATE_THEME):
+		stream = load(PRIVATE_THEME) as AudioStream
+	if stream == null:
+		if ResourceLoader.exists("res://assets/music/theme.ogg"):
+			stream = load("res://assets/music/theme.ogg") as AudioStream
+	if stream != null:
+		stream.set("loop", true)
+		music.stream = stream
+		music.volume_db = MUSIC_DB
+		music.play()
+	(space_view.get_node("Plunge") as Plunge).phase_changed.connect(_on_plunge_phase)
+	_setup_dread()
+	_setup_story()
+	_flare = ColorRect.new()
+	_flare.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_flare.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var fm := ShaderMaterial.new()
+	fm.shader = load("res://shaders/lens_flare.gdshader")
+	_flare.material = fm
+	_flare.visible = false
+	add_child(_flare)
+	move_child(_flare, 0)
+
+
+const HELP_KEYS := "F12 screenshot · B black hole · N Earth · J warp to what you look at · Tab travel menu · WASD move · Space/Ctrl up/down · Q/E roll · mouse look · Shift boost · scroll or [ ] throttle · T time speed · V view · H markers · M music · F11 window · Esc free mouse"
+const HELP_PAD := "L3 screenshot · D-pad right black hole · D-pad left Earth · X warp to what you look at · Start travel menu · left stick move · A up / jump · B or LT down · right stick look · LB/RB roll · RT boost · D-pad up/down throttle · R3 view · Y markers · Back time speed"
+
+
+func _input(event: InputEvent) -> void:
+	# Show the hints for whatever the player is holding.
+	if event is InputEventJoypadButton or (event is InputEventJoypadMotion and absf(event.axis_value) > 0.5):
+		_set_pad(true)
+	elif event is InputEventKey:
+		_set_pad(false)
+	if event.is_action_pressed("screenshot"):
+		_save_screenshot()
+	if event.is_action_pressed("fullscreen"):
+		var full := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if full else DisplayServer.WINDOW_MODE_FULLSCREEN)
+
+
+var _using_pad := false
+var _vignette: ColorRect
+var _flare: ColorRect
+var _drone: AudioStreamPlayer
+## 0 far from the black hole, 1 at its horizon. Drives the darkening view and the drone.
+var _dread := 0.0
+
+const VIGNETTE_SHADER := "shader_type canvas_item;\nuniform float amount = 0.0;\nvoid fragment() {\n\tfloat r = length(UV * 2.0 - 1.0);\n\tCOLOR = vec4(0.0, 0.0, 0.0, smoothstep(0.55, 1.5, r) * amount);\n}\n"
+
+
+## The things that make the black hole feel wrong before you can say why: the edges of your
+## view closing in, and a drone so low you half feel it.
+func _setup_dread() -> void:
+	_vignette = ColorRect.new()
+	_vignette.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var shader := Shader.new()
+	shader.code = VIGNETTE_SHADER
+	var m := ShaderMaterial.new()
+	m.shader = shader
+	_vignette.material = m
+	add_child(_vignette)
+	move_child(_vignette, 0)
+	_drone = AudioStreamPlayer.new()
+	var stream := load("res://assets/music/black_hole_drone.ogg") as AudioStreamOggVorbis
+	if stream != null:
+		stream.loop = true
+		_drone.stream = stream
+		_drone.volume_db = -60.0
+		add_child(_drone)
+
+
+func _update_dread(p: Player, delta: float) -> void:
+	var target := 0.0
+	var plunge := space_view.plunge
+	if plunge.phase == Plunge.Phase.FALLING:
+		target = 1.0
+	elif plunge.phase == Plunge.Phase.NONE and p.nearest_is_black_hole:
+		var rs: float = Universe.catalog.body(p.nearest_body_id)["radius_m"]
+		target = clampf(1.0 - log(1.0 + maxf(p.nearest_altitude, 0.0) / rs) / log(40.0), 0.0, 1.0)
+	_dread = lerpf(_dread, target, 1.0 - exp(-1.5 * delta))
+	(_vignette.material as ShaderMaterial).set_shader_parameter("amount", 0.6 * _dread)
+	if _drone.stream != null:
+		if _dread > 0.01 and not _drone.playing and not music.stream_paused:
+			_drone.play()
+		elif (_dread <= 0.01 or music.stream_paused) and _drone.playing:
+			_drone.stop()
+		_drone.volume_db = lerpf(-34.0, -5.0, _dread)
+
+
+## The star's lens flare, hidden behind any planet or moon that covers it.
+func _update_flare(p: Player) -> void:
+	_flare.visible = false
+	if space_view.plunge.phase != Plunge.Phase.NONE or space_view.warp_amount > 0.3:
+		return
+	var primary := Universe.catalog.primary_of(p.system_id)
+	if primary.is_empty() or primary["kind"] != "star" or not space_view.bodies.has(primary["id"]):
+		return
+	if not (space_view.bodies[primary["id"]] as Node3D).visible:
+		return
+	var cam := p.camera
+	var origin := cam.global_position
+	var star_node: Node3D = space_view.bodies[primary["id"]]
+	var occluders := []
+	for id in space_view.bodies:
+		var node: Node3D = space_view.bodies[id]
+		var b := Universe.catalog.body(id)
+		if id == primary["id"] or b.is_empty() or b["kind"] in ["star", "black-hole"] or not node.visible:
+			continue
+		occluders.append([node.global_position - origin, node.global_basis.get_scale().x])
+	var basis := cam.global_basis
+	var size := get_viewport().get_visible_rect().size
+	var state := LensFlareMath.compute(star_node.global_position - origin, star_node.global_basis.get_scale().x,
+		-basis.z, basis.x, basis.y, deg_to_rad(cam.fov), size.x / maxf(size.y, 1.0), occluders)
+	if not state["visible"]:
+		return
+	# Inside thick air the sky's own glow takes over from the lens.
+	var soften := 1.0
+	if not space_view.ground.is_empty():
+		soften = 1.0 - 0.18 * (1.0 - smoothstep(0.0, 60000.0, float(space_view.ground["sea_altitude"])))
+	var m := _flare.material as ShaderMaterial
+	_flare.visible = true
+	m.set_shader_parameter("star_ndc", state["ndc"])
+	m.set_shader_parameter("star_color", UniverseCatalog.color_of(primary["star_color"], Color(1.0, 0.95, 0.85)))
+	m.set_shader_parameter("intensity", float(state["intensity"]) * soften)
+	m.set_shader_parameter("visibility", state["visibility"])
+	m.set_shader_parameter("diamond_ring", state["diamond_ring"])
+	m.set_shader_parameter("aspect", size.x / maxf(size.y, 1.0))
+	m.set_shader_parameter("roll", basis.get_euler().z * 0.5)
+
+
+## How much slower your clock runs than one far away, hovering at `altitude` above the horizon.
+static func time_dilation(altitude: float, rs: float) -> float:
+	return 1.0 / sqrt(maxf(1.0 - rs / (rs + maxf(altitude, rs * 1.0e-6)), 1.0e-12))
+var _shot_note_until := 0.0
+
+
+## Saves what is on screen to a "screenshots" folder next to the game (handy for showing a
+## problem exactly as it looked).
+func _save_screenshot() -> void:
+	await RenderingServer.frame_post_draw
+	var img := get_viewport().get_texture().get_image()
+	var dir := OS.get_executable_path().get_base_dir().path_join("screenshots")
+	if OS.has_feature("editor") or DirAccess.make_dir_recursive_absolute(dir) != OK:
+		dir = OS.get_user_data_dir()
+	var p := space_view.player
+	var name := "uzay-%s-%s.png" % [Time.get_datetime_string_from_system().replace(":", "").replace("T", "-"), p.nearest_body_id]
+	var notes := FileAccess.open(dir.path_join(name.get_basename() + ".txt"), FileAccess.WRITE)
+	if notes != null:
+		notes.store_string("gpu=%s\nfps=%d\nwindow=%s\nbody=%s altitude=%.1f speed=%.1f mode=%d\nphase=%d heat=%.2f warp=%.2f\n" % [
+			RenderingServer.get_video_adapter_name(), Engine.get_frames_per_second(), DisplayServer.window_get_size(),
+			p.nearest_body_id, p.nearest_altitude, p.velocity.length(), p.mode,
+			space_view.plunge.phase, space_view.entry_heat, space_view.warp_amount])
+	if img.save_png(dir.path_join(name)) == OK:
+		_shot_note_until = Time.get_ticks_msec() / 1000.0 + 2.0
+		info_note = "Screenshot saved"
+
+
+var info_note := ""
+
+
+## Show the hints for whatever the player is holding, and name the controller so it is plain
+## whether the game has seen one at all.
+func _set_pad(on: bool) -> void:
+	_using_pad = on
+	var pads := Input.get_connected_joypads()
+	if on and not pads.is_empty():
+		help.text = "%s\nController: %s" % [HELP_PAD, Input.get_joy_name(pads[0])]
+	else:
+		help.text = HELP_KEYS + ("" if not pads.is_empty() else "\nNo controller detected")
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if travel_menu.visible:
+		# The menu owns the controller while it is open; only its own toggle gets through.
+		if event.is_action_pressed("travel_menu"):
+			travel_menu.close()
+		return
+	if event.is_action_pressed("toggle_markers"):
+		_markers_visible = not _markers_visible
+		marker_layer.visible = _markers_visible
+	elif event.is_action_pressed("time_scale"):
+		Universe.cycle_time_scale()
+	elif space_view.plunge.can_choose() and (event.is_action_pressed("travel_menu") or event.is_action_pressed("warp_to_look") \
+			or (event is InputEventKey and event.pressed and event.keycode in [KEY_ENTER, KEY_KP_ENTER])):
+		space_view.plunge.choose(space_view.choice_focus)
+	elif space_view.ending.active or space_view.intro_t >= 0.0:
+		pass # nothing is yours to do while the opening or the ending plays
+	elif event.is_action_pressed("travel_menu") and space_view.plunge.phase == Plunge.Phase.NONE:
+		if travel_menu.visible:
+			travel_menu.close()
+		else:
+			travel_menu.open()
+	elif event.is_action_pressed("jump_black_hole") and space_view.plunge.phase == Plunge.Phase.NONE:
+		space_view.warp_to("sgr-a-star")
+	elif event.is_action_pressed("jump_home") and space_view.plunge.phase == Plunge.Phase.NONE:
+		space_view.warp_to("earth")
+	elif event.is_action_pressed("warp_to_look") and space_view.plunge.phase == Plunge.Phase.NONE:
+		var target := _looked_at_target()
+		if target != "":
+			space_view.warp_to(target)
+	elif event.is_action_pressed("mute"):
+		music.stream_paused = not music.stream_paused
+
+
+func _on_plunge_phase(phase: Plunge.Phase) -> void:
+	if phase == Plunge.Phase.FALLING:
+		# Nothing gets out, and the music knows it: line the peak up with the end of the fall.
+		travel_menu.visible = false
+		music.stream_paused = false
+		music.play(maxf(MUSIC_PEAK_SECONDS - PlungeMath.FALL_SECONDS, 0.0))
+		music.volume_db = -3.0
+	elif phase == Plunge.Phase.NONE:
+		music.volume_db = MUSIC_DB
+
+
+func _update_plunge(p: Player) -> void:
+	var plunge := space_view.plunge
+	fade.color.a = maxf(plunge.white, space_view.warp_flash)
+	warp.visible = space_view.warp_amount > 0.01
+	(warp.material as ShaderMaterial).set_shader_parameter("amount", space_view.warp_amount)
+	heat.visible = space_view.entry_heat > 0.01
+	(heat.material as ShaderMaterial).set_shader_parameter("heat", space_view.entry_heat)
+	var in_space := plunge.phase == Plunge.Phase.NONE and not space_view.ending.active and space_view.intro_t < 0.0
+	if space_view.is_warping():
+		notice.text = ""
+	info.visible = in_space
+	help.visible = in_space
+	marker_layer.visible = in_space and _markers_visible
+	notice.text = ""
+	match plunge.phase:
+		Plunge.Phase.NONE:
+			if p.nearest_is_black_hole:
+				var rs: float = Universe.catalog.body(p.nearest_body_id)["radius_m"]
+				var away := maxf(p.nearest_altitude, 0.0) / rs
+				if away < 0.5:
+					notice.text = "POINT OF NO RETURN   %.2f horizon radii to go" % away
+					notice.modulate = Color(1.0, 0.35, 0.25, 0.6 + 0.4 * sin(Time.get_ticks_msec() * 0.008))
+				elif away < 6.0:
+					notice.text = "Event horizon in %.1f radii. It is pulling you in." % away
+					notice.modulate = Color(1.0, 0.8, 0.55, 0.85)
+		Plunge.Phase.FALLING:
+			if plunge.t < 8.0:
+				notice.text = "You crossed the event horizon. Nothing comes back from here."
+				notice.modulate = Color(1.0, 0.9, 0.8, clampf(minf(plunge.t, 8.0 - plunge.t), 0.0, 1.0))
+		Plunge.Phase.TESSERACT:
+			if plunge.can_choose() and space_view.choice_focus >= 0:
+				notice.text = "%s\n%s" % [Story.CHOICE_CAPTIONS[space_view.choice_focus],
+					"Start: reach through" if _using_pad else "Enter: reach through"]
+				notice.modulate = Color(1.0, 0.92, 0.8, 0.9)
+
+
+func _process(delta: float) -> void:
+	var p := space_view.player
+	_update_plunge(p)
+	var nearest := Universe.catalog.body(p.nearest_body_id)
+	var system_name: String = Universe.catalog.system(p.system_id).get("name", "")
+	info.text = "%s\n%s   altitude %s\nspeed %s   throttle %+d\ntime %s   %d fps" % [
+		system_name.to_upper(),
+		nearest.get("name", "—"), Fmt.distance(maxf(p.nearest_altitude, 0.0)),
+		Fmt.speed(p.velocity.length()), p.throttle,
+		Fmt.time_scale(Universe.time_scale), Engine.get_frames_per_second(),
+	]
+	if p.nearest_is_black_hole and space_view.plunge.phase == Plunge.Phase.NONE:
+		var rs: float = nearest["radius_m"]
+		if p.nearest_altitude < rs * 40.0:
+			info.text += "\n1 hour here = %s on Earth" % Fmt.duration(3600.0 * time_dilation(p.nearest_altitude, rs))
+	_update_dread(p, delta)
+	_update_story(delta)
+	_update_flare(p)
+	if Time.get_ticks_msec() / 1000.0 < _shot_note_until:
+		info.text += "\n" + info_note
+	if marker_layer.visible:
+		_update_markers()
+
+
+## The body whose marker is closest to the middle of the screen (within reach), or "".
+func _looked_at_target() -> String:
+	var middle := get_viewport().get_visible_rect().size * 0.5
+	var best := ""
+	var best_d := 220.0
+	for id in _markers:
+		var label: Label = _markers[id]
+		if not label.visible or not _marker_targets.has(id):
+			continue
+		var d := (label.position + Vector2(4, 9)).distance_to(middle)
+		if d < best_d:
+			best_d = d
+			best = _marker_targets[id]
+	return best
+
+
+func _update_markers() -> void:
+	var cam := space_view.player.camera
+	var seen := {}
+	if space_view.face_half > 0.0 and space_view.story.marker_shown():
+		_show_marker(cam, "_devourer", space_view.face_direction * space_view.space.far * 0.5,
+			"UNKNOWN  %s" % Fmt.distance(space_view.face_range), seen)
+		if _markers.has("_devourer"):
+			(_markers["_devourer"] as Label).add_theme_color_override("font_color", Color(1.0, 0.55, 0.6, 0.85))
+	for id in space_view.bodies:
+		if not (space_view.bodies[id] as Node3D).visible:
+			continue
+		var b := Universe.catalog.body(id)
+		if b["kind"] == "moon" and b["parent"] != space_view.player.nearest_body_id \
+				and id != space_view.player.nearest_body_id:
+			continue # only show moons of the world you're at, to keep the sky clean
+		var world_pos: Vector3 = space_view.render_position_of(id)
+		var dist := Universe.catalog.body_position(id, Universe.sim_time).sub(space_view.player.pos).length()
+		if b["radius_m"] / maxf(dist, 1.0) > 0.03:
+			continue # it fills a good part of the view already: no label across its face
+		_marker_targets[id] = id
+		_show_marker(cam, id, world_pos, "%s  %s" % [b["name"], Fmt.distance(dist)], seen)
+	for fs in space_view.far_system_vectors():
+		var world_pos: Vector3 = fs["dir"] * space_view.space.far * 0.5
+		var star := Universe.catalog.primary_of(fs["id"])
+		if not star.is_empty():
+			_marker_targets[fs["id"]] = star["id"]
+		_show_marker(cam, fs["id"], world_pos, "✦ %s  %s" % [fs["name"], Fmt.distance(fs["distance"])], seen)
+	for id in _markers:
+		if not seen.has(id):
+			_markers[id].visible = false
+
+
+func _show_marker(cam: Camera3D, id: String, world_pos: Vector3, text: String, seen: Dictionary) -> void:
+	if cam.is_position_behind(world_pos) or space_view.is_occluded(world_pos, id):
+		return
+	var screen := cam.unproject_position(world_pos)
+	if not get_viewport().get_visible_rect().has_point(screen):
+		return
+	var label: Label = _markers.get(id)
+	if label == null:
+		label = Label.new()
+		label.add_theme_font_size_override("font_size", 13)
+		label.add_theme_color_override("font_color", Color(0.75, 0.85, 1.0, 0.8))
+		marker_layer.add_child(label)
+		_markers[id] = label
+	label.text = "· " + text
+	label.position = screen + Vector2(-4, -9)
+	label.visible = true
+	seen[id] = true
+
+
+# --- The story on screen: who is talking, the dark when it has you, the closing title. ---
+
+var _sub_box: VBoxContainer
+var _sub_who: Label
+var _sub_text: Label
+var _sub_queue: Array = []
+var _sub_t := 0.0
+var _sub_seconds := 0.0
+var _black: ColorRect
+var _title: Label
+var _title_sub: Label
+
+const SPEAKERS := {
+	"dispatch": ["EARTH DISPATCH", Color(0.6, 0.82, 1.0)],
+	"ship": ["VIGIL", Color(1.0, 0.85, 0.6)],
+	"self": ["", Color(1.0, 0.95, 0.86)],
+}
+
+
+func _setup_story() -> void:
+	_black = ColorRect.new()
+	_black.color = Color(0.0, 0.0, 0.0, 0.0)
+	_black.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_black.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_black)
+	_title = _centered_label(54, -70.0)
+	_title_sub = _centered_label(20, 10.0)
+	_sub_box = VBoxContainer.new()
+	_sub_box.anchor_left = 0.5
+	_sub_box.anchor_right = 0.5
+	_sub_box.anchor_top = 1.0
+	_sub_box.anchor_bottom = 1.0
+	_sub_box.offset_left = -470.0
+	_sub_box.offset_right = 470.0
+	_sub_box.offset_top = -210.0
+	_sub_box.offset_bottom = -70.0
+	_sub_box.alignment = BoxContainer.ALIGNMENT_END
+	_sub_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_sub_box)
+	_sub_who = Label.new()
+	_sub_who.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_sub_who.add_theme_font_size_override("font_size", 13)
+	_sub_who.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
+	_sub_who.add_theme_constant_override("outline_size", 5)
+	notice.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.8))
+	notice.add_theme_constant_override("outline_size", 6)
+	_sub_box.add_child(_sub_who)
+	_sub_text = Label.new()
+	_sub_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_sub_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_sub_text.add_theme_font_size_override("font_size", 21)
+	_sub_text.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
+	_sub_text.add_theme_constant_override("outline_size", 6)
+	_sub_box.add_child(_sub_text)
+	_sub_box.modulate.a = 0.0
+	space_view.story.line.connect(func(who: String, text: String) -> void: _sub_queue.append([who, text]))
+
+
+func _centered_label(font_size: int, top: float) -> Label:
+	var l := Label.new()
+	l.anchor_left = 0.0
+	l.anchor_right = 1.0
+	l.anchor_top = 0.5
+	l.anchor_bottom = 0.5
+	l.offset_top = top
+	l.offset_bottom = top + font_size * 1.6
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.add_theme_font_size_override("font_size", font_size)
+	l.modulate.a = 0.0
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(l)
+	return l
+
+
+func _update_story(delta: float) -> void:
+	# Lines are typed out one at a time and stay long enough to read.
+	_sub_t += delta
+	if _sub_t >= _sub_seconds and not _sub_queue.is_empty():
+		var next: Array = _sub_queue.pop_front()
+		var who: Array = SPEAKERS.get(next[0], SPEAKERS["self"])
+		_sub_who.text = who[0]
+		_sub_who.modulate = who[1]
+		_sub_text.text = next[1]
+		_sub_text.add_theme_color_override("font_color", (who[1] as Color).lerp(Color.WHITE, 0.6))
+		_sub_t = 0.0
+		_sub_seconds = 4.0 + 0.07 * (next[1] as String).length()
+	_sub_text.visible_characters = int(_sub_t * 42.0)
+	_sub_box.modulate.a = clampf(minf(_sub_t * 3.0, _sub_seconds - _sub_t), 0.0, 1.0) if _sub_t < _sub_seconds else 0.0
+
+	var ending := space_view.ending
+	_black.color.a = ending.black
+	_title.text = "U Z A Y"
+	if ending.active or ending.title > 0.0:
+		_title_sub.text = "A thousand years ago, someone looked up."
+		_title.modulate.a = ending.title
+		_title_sub.modulate.a = ending.title
+	else:
+		# The opening: just the name, over Earth, before anyone speaks.
+		_title_sub.text = ""
+		_title.modulate.a = space_view.intro_title
+		_title_sub.modulate.a = 0.0

@@ -1,0 +1,99 @@
+# Uzay
+
+True-scale space exploration game in **Godot 4.7 (GDScript)**, desktop only. The repository is public-facing (README is the showcase).
+You're an astronaut with a jetpack flying through the real Solar System, nearby stars, and down to
+Sagittarius A*. The plan and design pillars live in the project's plan doc; the short version:
+
+1. The black hole is the centrepiece (true scale, real lensing, no return, long fall into a tesseract).
+2. True 1:1 scale everywhere, so you feel small. Never fake it by enlarging bodies or shrinking the player.
+3. Speed scales with distance to the nearest surface (Megaton Rainfall feel): see `src/sim/flight.gd`.
+4. No scene swaps between space, atmosphere and ground.
+5. Space looks like real space (dark, real stars, auto-exposure).
+
+## Layout
+
+- `src/core/` small shared types (`DVec3` 64-bit vector) and input setup (`game_input.gd` autoload).
+- `src/sim/` pure simulation, no nodes where possible: `kepler.gd`, `universe_catalog.gd`,
+  `flight.gd`, `scaled_space.gd`. `universe.gd` is the `Universe` autoload (catalog + sim clock).
+- `src/game/` scene scripts: `space_view.gd` (builds the system, floating origin, lighting), `player.gd`,
+  `body_visuals.gd` (mesh + materials per body: surface, air, rings, black hole lens).
+- `shaders/` planet, atmosphere, ring, star, sky and `black_hole.gdshader` (ray-marched Schwarzschild lensing).
+  Shaders that never write depth draw in the transparent pass, so the sky uses `render_priority = -100`.
+- `assets/textures/` planet maps and the Milky Way panorama (Solar System Scope, CC BY 4.0).
+- `src/game/plunge.gd` (event horizon → fall → tesseract → exit state machine; maths in `src/sim/plunge_math.gd`)
+  and `tesseract.gd` (endless wrapped lattice of light strands, MultiMesh).
+- `src/game/astronaut_view.gd` draws the astronaut in its own SubViewport laid over the main view (the main
+  camera's near plane is kilometres away in orbit, so a 2 m figure cannot be drawn by it). First person (V / R3) shows gloved hands fixed to that camera.
+- Ground: `src/sim/terrain_field.gd` (CPU height) and `shaders/terrain.gdshader` (GPU, same formula: keep
+  them in step), drawn by `src/game/terrain_patch.gd` as a disc under the player. `src/sim/body_frame.gd`
+  does planet-fixed ↔ system axes in 64-bit. Near a body the player turns with its spin
+  (`SpaceView._carry_with_spin`). `player.gd` has FLY and WALK modes.
+- Sky: `assets/textures/milky_way.jpg` and `data/stars.bin` are baked by `tools/bake_sky.py` from Stellarium's
+  Milky Way photograph and the HYG star catalogue (sky frame: +Z galactic centre, +Y galactic north).
+  `shaders/sky.gdshaderinc` is the one place that turns a direction into sky colour (sky sphere and black
+  hole lens both use it; `core = 1` gives the dense galactic-centre sky). `src/game/star_points.gd` draws the
+  naked-eye stars as points. Anything drawn "at infinity" must set `POSITION.z = 0.0` in its vertex shader:
+  a sphere scaled to just inside the far plane gets clipped in a disc at the centre of the view.
+- Stars: `shaders/star.gdshader` (plasma surface in the star's palette, ported from the prototype) plus a
+  camera-facing `Glow` child (`star_glow.gdshader`: corona up close, glare from afar) and a HUD lens flare
+  (`shaders/lens_flare.gdshader`, eclipses in `src/sim/lens_flare_math.gd`). `src/game/cloud_layer.gd` (Earth's clouds from inside the air) and
+  `src/game/surface_rocks.gd` (rocks hashed per cell on the cube face) add detail near the ground.
+- Story (the reason to play): `src/sim/story_math.gd` (how far the Devourer is, how much sky it spans, which
+  worlds are gone: pure maths, real seconds of play) and `src/game/story.gd` (clock, the dispatch / inner-voice
+  lines, tesseract choices). The Devourer is a cloud hundreds of AU tall with a face in it, fixed in space
+  (it never turns to the player; from behind it is only mist): `devourer()` in `sky.gdshaderinc` marches each
+  ray through it, used by the sky, the star points and (so it shows through daylight) `atmosphere.gdshader`.
+  Its mouth opens only before a world goes (`StoryMath.mouth_open`). It never chases or eats the player. Eaten bodies are hidden and skipped via
+  `SpaceView.is_gone`. The game opens with `SpaceView.begin_intro` (title, Dispatch, your head turned to it).
+  Three windows in the tesseract (`Tesseract.update_choices`): only THEN saves the world and starts
+  `src/game/ending.gd` (rescue ship `rescue_ship.gd`, a CC BY model in `assets/models/rescue_ship.glb`, drawn in the astronaut's SubViewport, so its
+  see-through materials must be premultiplied-alpha, never additive). The game must never tell the player
+  to enter the black hole: no hints in text or UI. `half` and `flat` are reserved words in shaders.
+- Camera auto-exposure: in Godot a *higher* sensitivity limit means a *darker* picture (`player.gd`).
+- `src/ui/` HUD and the Tab travel menu. F12 / L3 saves a screenshot and a .txt of state next to the exe.
+- `data/universe.json` true-scale catalogue (SI units). Generated by `tools/export_universe.ts` from the
+  old prototype; edit the JSON directly from now on, or extend the script and regenerate.
+- `tests/` headless tests. `prototype-web/` is the old AI Studio build, reference only (`.gdignore`d).
+- `assets/music/` the soundtrack: `theme.ogg` and `black_hole_drone.ogg` are original (made by `tools/make_theme.py`
+  and `tools/make_drone.py`). The repository is shared publicly: commit only assets we may redistribute, and credit
+  them in README.md. A personal build may add `assets/music/private_theme.mp3` (git-ignored), which the HUD prefers. `assets/models/astronaut.glb` is the
+  Poly by Google astronaut (CC BY).
+
+## Rules that keep true scale working
+
+- Simulation positions are **metres in `DVec3`** (64-bit). Only convert to `Vector3` after subtracting the
+  player position. Never store a world position in a `Vector3`.
+- The player node stays at the origin; the world moves around it.
+- Rendering goes through `ScaledSpace`: dynamic near plane from altitude, far = near × 2e6, far objects
+  pulled in and shrunk about the camera (angular size unchanged). The nearest body is never compressed.
+  Godot culls everything if far/near goes much past 1e7, so don't raise `FAR_NEAR_RATIO`.
+- The player is carried along with the body it's near (`SpaceView._choose_frame_body`), or orbital
+  motion (30 km/s for Earth) would leave it behind.
+
+## Commands
+
+Godot 4.7.2 must be on PATH as `godot` (or use the full path).
+
+```sh
+godot --headless --import                      # once after clone / new files (builds class cache)
+godot --headless -s res://tests/run_tests.gd   # run all tests (exit code 1 on failure)
+godot                                          # run the game (or open the folder in the editor)
+```
+
+Screenshots without a monitor (e.g. in a cloud container), using the real Forward+ renderer on lavapipe:
+
+```sh
+VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json xvfb-run -a -s "-screen 0 1600x900x24" \
+  godot --resolution 1600x900 -- capture=/tmp/shot.png frames=30 altitude=400000 look=sun
+# env UZAY_HIDE=Astronaut,Sky hides nodes, UZAY_DUMP=1 lists what is visible. other capture args: goto=<body id> yaw=<deg> menu=1 fall=<seconds into the fall> tesseract=<seconds> leave=1 pitch=<deg up from straight down> walk=1 heat=<0..1> fp=1 (first person) story=<seconds> look=devourer around=<deg round it, 180 = behind> intro=<seconds> ending=<seconds> choose=<0..2>
+```
+
+Scripts loaded by a `-s` script can't see autoloads, so anything using `Universe` must run inside the
+real game (that's why capture is a node SpaceView adds, not a `-s` script).
+
+## Conventions
+
+- Typed GDScript, tabs, `snake_case`. Keep sim code free of scene dependencies so it's testable.
+- Add a test in `tests/test_*.gd` (extend `TestCase`, methods named `test_*`) for any new maths.
+- Every PR builds Windows/macOS/Linux on GitHub Actions (`.github/workflows/build.yml`); artifacts are
+  the playable builds.

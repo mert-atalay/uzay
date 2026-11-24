@@ -1,0 +1,7 @@
+# Normalize line endings so Windows and Mac edits diff cleanly.
+* text=auto eol=lf
+*.mp3 binary
+*.png binary
+*.jpg binary
+*.exr binary
+*.glb binary
