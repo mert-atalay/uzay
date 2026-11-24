@@ -7,11 +7,11 @@ really are and as big as they really are, so you feel as small as you would out 
 Earth orbit down to the Moon and walk on it, cross to Saturn, travel to other stars, and fall into
 the black hole at the centre of our galaxy.
 
-![An astronaut floating above the Earth](docs/screenshots/earth.jpg)
+![The astronaut in front of the black hole Sagittarius A*](docs/screenshots/black-hole.jpg)
 
 | | |
 | --- | --- |
-| ![Saturn and its rings](docs/screenshots/saturn.jpg) | ![The black hole Sagittarius A*](docs/screenshots/black-hole.jpg) |
+| ![An astronaut floating above the Earth](docs/screenshots/earth.jpg) | ![Saturn and its rings](docs/screenshots/saturn.jpg) |
 | ![The Moon](docs/screenshots/moon.jpg) | ![Jupiter in front of the Milky Way](docs/screenshots/jupiter.jpg) |
 
 ## What is in it
@@ -77,9 +77,6 @@ It needs a graphics card that supports Vulkan.
 | Free the mouse | Esc | |
 | Fullscreen / window | F11 | |
 | Screenshot (saved in a `screenshots` folder next to the game) | F12 | Left stick click |
-
-The game starts fullscreen. In the travel menu, move with the D-pad or arrows, A / Enter picks a
-destination, B / Esc closes. The bottom-left hint line names the controller the game has found.
 
 The game starts fullscreen. In the travel menu, move with the D-pad or arrows, A / Enter picks a
 destination, B / Esc closes. The bottom-left hint line names the controller the game has found.
